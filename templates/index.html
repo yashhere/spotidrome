@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="download-form">
+    <form hx-post="/api/download"
+          hx-target="#job-list"
+          hx-swap="afterbegin"
+          hx-on::after-request="this.reset()">
+        <div class="input-group">
+            <input type="text"
+                   name="url"
+                   placeholder="Paste Spotify or YouTube URL..."
+                   required
+                   autocomplete="off">
+            <button type="submit">
+                <span class="btn-text">Download</span>
+                <span class="btn-icon">↓</span>
+            </button>
+        </div>
+        <p class="hint">Supports: Spotify tracks/playlists/albums, YouTube videos/playlists</p>
+    </form>
+</section>
+
+<section class="tabs">
+    <button class="tab active"
+            hx-get="/api/jobs"
+            hx-target="#content-area"
+            hx-swap="innerHTML">
+        Downloads
+    </button>
+    <button class="tab"
+            hx-get="/api/library"
+            hx-target="#content-area"
+            hx-swap="innerHTML">
+        Library
+    </button>
+</section>
+
+<section id="content-area">
+    <div id="job-list">
+        {% for job in jobs %}
+            {% include "partials/job_card.html" %}
+        {% else %}
+            <div class="empty-state">
+                <p>No downloads yet. Paste a URL above to get started!</p>
+            </div>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

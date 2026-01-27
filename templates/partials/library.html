@@ -1,0 +1,19 @@
+<div class="library">
+    <div class="library-header">
+        <h2>Music Library</h2>
+        <span class="library-stats">{{ total_artists }} artists</span>
+    </div>
+
+    <div class="artist-grid">
+        {% for artist in artists %}
+        <div class="artist-card">
+            <span class="artist-name">{{ artist.name.replace('_', ' ') }}</span>
+            <span class="track-count">{{ artist.track_count }} tracks</span>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <p>No music downloaded yet.</p>
+        </div>
+        {% endfor %}
+    </div>
+</div>

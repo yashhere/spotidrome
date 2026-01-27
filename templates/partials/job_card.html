@@ -1,0 +1,78 @@
+<div class="job-card {{ job.status.value }}"
+     id="job-{{ job.id }}"
+     {% if job.status.value in ['pending', 'running'] %}
+     hx-get="/api/jobs/{{ job.id }}"
+     hx-trigger="every 2s"
+     hx-swap="outerHTML"
+     {% endif %}>
+
+    <div class="job-header">
+        <span class="job-status">
+            {% if job.status.value == 'pending' %}...
+            {% elif job.status.value == 'running' %}DL
+            {% elif job.status.value == 'completed' %}OK
+            {% elif job.status.value == 'failed' %}ERR
+            {% elif job.status.value == 'cancelled' %}X
+            {% endif %}
+        </span>
+        <span class="job-title">{{ job.playlist_name or 'Loading...' }}</span>
+        {% if job.status.value in ['pending', 'running'] %}
+        <button class="btn-cancel"
+                hx-delete="/api/jobs/{{ job.id }}"
+                hx-target="#job-{{ job.id }}"
+                hx-swap="outerHTML">
+            Cancel
+        </button>
+        {% endif %}
+    </div>
+
+    {% if job.status.value == 'running' and job.progress.total > 0 %}
+    <div class="progress-bar">
+        <div class="progress-fill"
+             style="width: {{ (job.progress.current / job.progress.total * 100)|round }}%">
+        </div>
+    </div>
+    <div class="progress-text">
+        {{ job.progress.current }} / {{ job.progress.total }} tracks
+        {% if job.progress.current_track %}
+        <span class="current-track">{{ job.progress.current_track }}</span>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% if job.status.value == 'completed' %}
+    <div class="job-result">
+        Downloaded {{ job.tracks|length }} tracks
+    </div>
+
+    {% if job.tracks %}
+    <div class="track-list">
+        {% for track in job.tracks[:10] %}
+        <div class="track-item">
+            {% if track.cover_url %}
+            <img class="track-cover" src="{{ track.cover_url }}" alt="Cover" loading="lazy">
+            {% else %}
+            <div class="track-cover-placeholder"></div>
+            {% endif %}
+            <div class="track-info">
+                <span class="track-name">{{ track.name }}</span>
+                <span class="track-artist">{{ track.artist }}{% if track.album %} - {{ track.album }}{% endif %}</span>
+            </div>
+            {% if track.has_lyrics %}
+            <span class="track-badge">LRC</span>
+            {% endif %}
+        </div>
+        {% endfor %}
+        {% if job.tracks|length > 10 %}
+        <div class="track-more">+ {{ job.tracks|length - 10 }} more tracks</div>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {% if job.status.value == 'failed' and job.error %}
+    <div class="job-error">
+        {{ job.error }}
+    </div>
+    {% endif %}
+</div>

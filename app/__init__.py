@@ -1,0 +1,1 @@
+"""Spotidrome app package."""
