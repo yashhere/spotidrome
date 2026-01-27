@@ -540,6 +540,63 @@ header h1 {
   color: var(--text-secondary);
 }
 
+/* Library Table */
+.library-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.library-table th,
+.library-table td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.library-table th {
+  background: var(--bg-tertiary);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.library-table tbody tr:hover {
+  background: var(--bg-tertiary);
+}
+
+.library-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.library-table .track-title {
+  font-weight: 500;
+}
+
+.library-table .track-actions {
+  text-align: right;
+  width: 50px;
+}
+
+.btn-edit {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  font-size: 1rem;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.btn-edit:hover {
+  opacity: 1;
+}
+
 /* Empty State */
 .empty-state {
   text-align: center;

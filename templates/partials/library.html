@@ -1,19 +1,40 @@
 <div class="library">
     <div class="library-header">
         <h2>Music Library</h2>
-        <span class="library-stats">{{ total_artists }} artists</span>
+        <span class="library-stats">{{ total_tracks }} tracks</span>
     </div>
 
-    <div class="artist-grid">
-        {% for artist in artists %}
-        <div class="artist-card">
-            <span class="artist-name">{{ artist.name.replace('_', ' ') }}</span>
-            <span class="track-count">{{ artist.track_count }} tracks</span>
-        </div>
-        {% else %}
-        <div class="empty-state">
-            <p>No music downloaded yet.</p>
-        </div>
+    {% if tracks %}
+    <table class="library-table">
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Artist</th>
+          <th>Album</th>
+          <th>Year</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for track in tracks %}
+        <tr>
+          <td class="track-title">{{ track.title }}</td>
+          <td>{{ track.artist }}</td>
+          <td>{{ track.album }}</td>
+          <td>{{ track.year }}</td>
+          <td class="track-actions">
+            <button class="btn-edit" hx-get="/api/tracks/edit?file_path={{ track.file_path | urlencode }}" hx-target="body"
+              hx-swap="beforeend">
+              ✏️
+            </button>
+          </td>
+        </tr>
         {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+      <p>No music downloaded yet.</p>
     </div>
+    {% endif %}
 </div>

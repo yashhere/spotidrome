@@ -62,7 +62,7 @@
                 {% if track.has_lyrics %}
                 <span class="track-badge">LRC</span>
                 {% endif %}
-                <button class="btn-icon" hx-get="/api/lyrics/edit" hx-vals='{"file_path": "{{ track.file_path }}"}' hx-target="body"
+                <button class="btn-icon" hx-get="/api/tracks/edit" hx-vals='{"file_path": "{{ track.file_path }}"}' hx-target="body"
                   hx-swap="beforeend" title="Edit Lyrics">
                   ✏️
                 </button>

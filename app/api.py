@@ -111,26 +111,51 @@ async def cancel_job(request: Request, job_id: str):
 @app.get("/api/library", response_class=HTMLResponse)
 async def get_library(request: Request):
     """Get library browser partial."""
-    # Get artist directories
-    artists = []
+    tracks = []
     if MUSIC_DIR.exists():
-        artists = sorted([
-            {"name": d.name, "track_count": len(list(d.glob("*.mp3")))}
-            for d in MUSIC_DIR.iterdir()
-            if d.is_dir()
-        ], key=lambda x: x["name"])
+        try:
+            from mutagen.easyid3 import EasyID3
+        except ImportError:
+            EasyID3 = None
+
+        for mp3_file in sorted(MUSIC_DIR.rglob("*.mp3")):
+            track = {
+                "file_path": str(mp3_file.relative_to(MUSIC_DIR)),
+                "filename": mp3_file.name,
+                "title": mp3_file.stem.replace("_", " "),
+                "artist": mp3_file.parent.name.replace("_", " ") if mp3_file.parent != MUSIC_DIR else "",
+                "album": "",
+                "year": "",
+            }
+
+            # Try to read ID3 metadata
+            if EasyID3:
+                try:
+                    audio = EasyID3(mp3_file)
+                    track["title"] = audio.get("title", [track["title"]])[0]
+                    track["artist"] = audio.get("artist", [track["artist"]])[0]
+                    track["album"] = audio.get("album", [""])[0]
+                    track["year"] = audio.get("date", [""])[0]
+                except Exception:
+                    pass
+
+            tracks.append(track)
 
     return templates.TemplateResponse("partials/library.html", {
         "request": request,
-        "artists": artists,
-        "total_artists": len(artists),
+        "tracks": tracks,
+        "total_tracks": len(tracks),
     })
 
 
-@app.get("/api/lyrics/edit", response_class=HTMLResponse)
+
+@app.get("/api/tracks/edit", response_class=HTMLResponse)
 async def get_lyrics_editor(request: Request, file_path: str):
     """Get lyrics editor modal."""
     track_path = Path(file_path)
+    if not track_path.is_absolute():
+        track_path = MUSIC_DIR / track_path
+
     if not track_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
 
