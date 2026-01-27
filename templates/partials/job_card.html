@@ -58,9 +58,15 @@
                 <span class="track-name">{{ track.name }}</span>
                 <span class="track-artist">{{ track.artist }}{% if track.album %} - {{ track.album }}{% endif %}</span>
             </div>
-            {% if track.has_lyrics %}
-            <span class="track-badge">LRC</span>
-            {% endif %}
+            <div class="track-actions">
+                {% if track.has_lyrics %}
+                <span class="track-badge">LRC</span>
+                {% endif %}
+                <button class="btn-icon" hx-get="/api/lyrics/edit" hx-vals='{"file_path": "{{ track.file_path }}"}' hx-target="body"
+                  hx-swap="beforeend" title="Edit Lyrics">
+                  ✏️
+                </button>
+                </div>
         </div>
         {% endfor %}
         {% if job.tracks|length > 10 %}

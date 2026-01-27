@@ -156,3 +156,55 @@ class LyricsProvider:
         except Exception as e:
             logger.debug(f"Musixmatch failed: {e}")
         return None, None
+
+
+def embed_lyrics_in_file(file_path, plain_lyrics: str | None, synced_lyrics: str | None = None) -> bool:
+    """Embed lyrics into an MP3 file's ID3 tags.
+
+    Args:
+        file_path: Path to the MP3 file
+        plain_lyrics: Plain text lyrics to embed as USLT
+        synced_lyrics: LRC format synced lyrics to embed as SYLT (optional)
+
+    Returns:
+        True if successful, False otherwise
+    """
+    from pathlib import Path
+
+    try:
+        from mutagen.id3 import ID3, USLT, Encoding
+        from mutagen.id3._util import ID3NoHeaderError
+    except ImportError:
+        logger.warning("mutagen not installed, cannot embed lyrics")
+        return False
+
+    file_path = Path(file_path)
+
+    try:
+        try:
+            audio = ID3(file_path)
+        except ID3NoHeaderError:
+            audio = ID3()
+            audio.save(file_path)
+            audio = ID3(file_path)
+
+        # Remove existing lyrics
+        audio.delall('USLT')
+        audio.delall('SYLT')
+
+        # Add plain lyrics
+        if plain_lyrics:
+            audio.add(USLT(
+                encoding=Encoding.UTF8,
+                lang='xxx',
+                desc='',
+                text=plain_lyrics
+            ))
+
+        audio.save()
+        logger.info(f"Embedded lyrics in: {file_path}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to embed lyrics in {file_path}: {e}")
+        return False

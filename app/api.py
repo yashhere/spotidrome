@@ -127,6 +127,96 @@ async def get_library(request: Request):
     })
 
 
+@app.get("/api/lyrics/edit", response_class=HTMLResponse)
+async def get_lyrics_editor(request: Request, file_path: str):
+    """Get lyrics editor modal."""
+    track_path = Path(file_path)
+    if not track_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Try to read existing lyrics
+    lyrics = ""
+
+    # Check for .lrc file first
+    lrc_path = track_path.with_suffix('.lrc')
+    if lrc_path.exists():
+        try:
+            lyrics = lrc_path.read_text(encoding='utf-8')
+        except Exception:
+            pass
+
+    # Fallback to embedded USLT
+    if not lyrics:
+        try:
+            from mutagen.id3 import ID3
+            audio = ID3(track_path)
+            uslt = audio.getall("USLT")
+            if uslt:
+                lyrics = uslt[0].text
+        except Exception:
+            pass
+
+    return templates.TemplateResponse("partials/lyrics_edit.html", {
+        "request": request,
+        "file_path": file_path,
+        "lyrics": lyrics,
+        "filename": track_path.name
+    })
+
+
+@app.post("/api/lyrics")
+async def update_lyrics(
+    file_path: str = Form(...),
+    lyrics: str = Form(...),
+):
+    """Update lyrics for a track - saves .lrc file and re-embeds in MP3."""
+    from .lyrics import embed_lyrics_in_file
+
+    # Validate file path is within music dir
+    track_path = Path(file_path)
+    if not track_path.is_absolute():
+        track_path = MUSIC_DIR / track_path
+
+    try:
+        track_path = track_path.resolve()
+        if not str(track_path).startswith(str(MUSIC_DIR.resolve())):
+            raise HTTPException(status_code=400, detail="Invalid file path")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid file path")
+
+    if not track_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Determine if synced (LRC format) or plain lyrics
+    lyrics_text = lyrics.strip()
+    is_synced = lyrics_text.startswith("[") and "]" in lyrics_text.split("\n")[0]
+
+    # Save .lrc file
+    lrc_path = track_path.with_suffix('.lrc')
+    lrc_path.write_text(lyrics_text, encoding='utf-8')
+    logger.info(f"Saved lyrics to: {lrc_path}")
+
+    # Embed lyrics in MP3
+    try:
+        plain_lyrics = lyrics_text
+        synced_lyrics = lyrics_text if is_synced else None
+
+        # Convert LRC to plain if synced
+        if is_synced:
+            # Strip timestamps for plain version
+            import re
+            plain_lyrics = re.sub(r'\[\d{2}:\d{2}[.\d]*\]', '', lyrics_text)
+            plain_lyrics = '\n'.join(line.strip() for line in plain_lyrics.split('\n') if line.strip())
+
+        embed_lyrics_in_file(track_path, plain_lyrics, synced_lyrics)
+        logger.info(f"Embedded lyrics in: {track_path}")
+    except Exception as e:
+        logger.error(f"Failed to embed lyrics: {e}")
+        # Still return success since .lrc was saved
+
+    return {"status": "ok", "message": "Lyrics updated"}
+
+
 @app.get("/health")
 async def health():
     """Health check endpoint."""

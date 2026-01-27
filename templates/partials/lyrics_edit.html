@@ -1,0 +1,25 @@
+<div class="modal-backdrop" id="lyrics-editor-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>Edit Lyrics</h3>
+            <button class="btn-close" onclick="document.getElementById('lyrics-editor-modal').remove()">×</button>
+        </div>
+        <div class="modal-body">
+            <p class="subtitle">{{ filename }}</p>
+            <form hx-post="/api/lyrics"
+                  hx-swap="none"
+                  onsubmit="document.getElementById('lyrics-editor-modal').remove(); alert('Lyrics updated!')">
+                <input type="hidden" name="file_path" value="{{ file_path }}">
+                <div class="form-group">
+                    <textarea name="lyrics" rows="15" class="lyrics-input" placeholder="Paste lyrics here (LRC format supported)...">{{ lyrics }}</textarea>
+                </div>
+                <!-- Hidden but required for job updates -->
+
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" onclick="document.getElementById('lyrics-editor-modal').remove()">Cancel</button>
+                    <button type="submit" class="btn-primary">Save Lyrics</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
