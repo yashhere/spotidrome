@@ -1,23 +1,62 @@
 <div class="modal-backdrop" id="lyrics-editor-modal">
-    <div class="modal">
+    <div class="modal-underlay" onclick="document.getElementById('lyrics-editor-modal').remove()"
+      style="position: absolute; top:0; bottom:0; left:0; right:0; z-index: -1;"></div>
+    <div class="modal-content">
         <div class="modal-header">
-            <h3>Edit Lyrics</h3>
+            <h3>Edit Track</h3>
             <button class="btn-close" onclick="document.getElementById('lyrics-editor-modal').remove()">×</button>
         </div>
         <div class="modal-body">
             <p class="subtitle">{{ filename }}</p>
-            <form hx-post="/api/lyrics"
+<!-- Unified Form -->
+<form hx-post="/api/tracks/update"
                   hx-swap="none"
-                  onsubmit="document.getElementById('lyrics-editor-modal').remove(); alert('Lyrics updated!')">
+                  hx-on:htmx:after-request="if(event.detail.successful) { document.getElementById('lyrics-editor-modal').remove(); alert('Track updated!'); } else { alert('Failed to update track'); }"
+                  class="metadata-form">
                 <input type="hidden" name="file_path" value="{{ file_path }}">
-                <div class="form-group">
-                    <textarea name="lyrics" rows="15" class="lyrics-input" placeholder="Paste lyrics here (LRC format supported)...">{{ lyrics }}</textarea>
-                </div>
-                <!-- Hidden but required for job updates -->
+<h4 style="margin-bottom: 0.75rem; font-size: 0.9rem; color: var(--text-secondary);">Metadata</h4>
+
+<div class="form-row">
+  <div class="form-group">
+    <label>Title</label>
+    <input type="text" name="title" value="{{ metadata.title }}" class="form-control">
+  </div>
+  <div class="form-group">
+    <label>Artist</label>
+    <input type="text" name="artist" value="{{ metadata.artist }}" class="form-control">
+  </div>
+</div>
+
+<div class="form-row">
+  <div class="form-group">
+    <label>Album</label>
+    <input type="text" name="album" value="{{ metadata.album }}" class="form-control">
+  </div>
+</div>
+
+<div class="form-row">
+                    <div class="form-group">
+                        <label>Year</label>
+                        <input type="text" name="date" value="{{ metadata.date }}" class="form-control" style="width: 80px">
+                        </div>
+                    <div class="form-group">
+                      <label>Track #</label>
+                      <input type="text" name="track_number" value="{{ metadata.track_number }}" class="form-control" style="width: 80px">
+                    </div>
+                    </div>
+                    
+                    <hr style="margin: 1.5rem 0; border: 0; border-top: 1px solid var(--border);">
+                    
+                    <h4 style="margin-bottom: 0.75rem; font-size: 0.9rem; color: var(--text-secondary);">Lyrics</h4>
+                    
+                    <div class="form-group">
+                      <textarea name="lyrics" rows="12" class="lyrics-input"
+                        placeholder="Paste lyrics here (LRC format supported)...">{{ lyrics }}</textarea>
+                    </div>
 
                 <div class="modal-footer">
                     <button type="button" class="btn-secondary" onclick="document.getElementById('lyrics-editor-modal').remove()">Cancel</button>
-                    <button type="submit" class="btn-primary">Save Lyrics</button>
+                    <button type="submit" class="btn-primary">Save Changes</button>
                 </div>
             </form>
         </div>

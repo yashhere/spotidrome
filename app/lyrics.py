@@ -208,3 +208,61 @@ def embed_lyrics_in_file(file_path, plain_lyrics: str | None, synced_lyrics: str
     except Exception as e:
         logger.error(f"Failed to embed lyrics in {file_path}: {e}")
         return False
+
+
+def update_metadata_in_file(file_path, metadata: dict) -> bool:
+    """Update ID3 metadata tags.
+
+    Args:
+        file_path: Path to MP3 file
+        metadata: Dictionary with keys: title, artist, album, date, track_number
+
+    Returns:
+        True if successful
+    """
+    from pathlib import Path
+    try:
+        from mutagen.easyid3 import EasyID3
+        from mutagen.id3 import ID3NoHeaderError, ID3
+    except ImportError:
+        logger.warning("mutagen not installed")
+        return False
+
+    file_path = Path(file_path)
+
+    try:
+        try:
+            audio = EasyID3(file_path)
+        except ID3NoHeaderError:
+            try:
+                # Try creating header
+                meta = ID3()
+                meta.save(file_path)
+                audio = EasyID3(file_path)
+            except Exception:
+                return False
+
+        if 'title' in metadata and metadata['title']:
+            audio['title'] = metadata['title']
+
+        if 'artist' in metadata and metadata['artist']:
+            # Handle multiple artists separated by ;
+            artists = [a.strip() for a in metadata['artist'].split(';') if a.strip()]
+            audio['artist'] = artists
+
+        if 'album' in metadata and metadata['album']:
+            audio['album'] = metadata['album']
+
+        if 'date' in metadata and metadata['date']:
+            audio['date'] = str(metadata['date'])
+
+        if 'track_number' in metadata and metadata['track_number']:
+            audio['tracknumber'] = str(metadata['track_number'])
+
+        audio.save()
+        logger.info(f"Updated metadata for: {file_path}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to update metadata: {e}")
+        return False

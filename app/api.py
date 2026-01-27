@@ -134,6 +134,26 @@ async def get_lyrics_editor(request: Request, file_path: str):
     if not track_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
 
+    # Fetch existing metadata
+    metadata = {
+        "title": "",
+        "artist": "",
+        "album": "",
+        "date": "",
+        "track_number": ""
+    }
+
+    try:
+        from mutagen.easyid3 import EasyID3
+        audio = EasyID3(track_path)
+        metadata["title"] = audio.get("title", [""])[0]
+        metadata["artist"] = audio.get("artist", [""])[0]
+        metadata["album"] = audio.get("album", [""])[0]
+        metadata["date"] = audio.get("date", [""])[0]
+        metadata["track_number"] = audio.get("tracknumber", [""])[0]
+    except Exception:
+        pass
+
     # Try to read existing lyrics
     lyrics = ""
 
@@ -160,8 +180,102 @@ async def get_lyrics_editor(request: Request, file_path: str):
         "request": request,
         "file_path": file_path,
         "lyrics": lyrics,
+        "metadata": metadata,
         "filename": track_path.name
     })
+
+
+@app.post("/api/tracks/update")
+async def update_track(
+    file_path: str = Form(...),
+    title: str = Form(None),
+    artist: str = Form(None),
+    album: str = Form(None),
+    date: str = Form(None),
+    track_number: str = Form(None),
+    lyrics: str = Form(None)
+):
+    """Update track metadata and lyrics."""
+    from .lyrics import update_metadata_in_file, embed_lyrics_in_file
+
+    # Validate file path
+    track_path = Path(file_path)
+    if not track_path.is_absolute():
+        track_path = MUSIC_DIR / track_path
+
+    try:
+        track_path = track_path.resolve()
+        if not str(track_path).startswith(str(MUSIC_DIR.resolve())):
+            raise HTTPException(status_code=400, detail="Invalid file path")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid file path")
+
+    if not track_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Update metadata
+    update_metadata_in_file(track_path, {
+        "title": title,
+        "artist": artist,
+        "album": album,
+        "date": date,
+        "track_number": track_number
+    })
+
+    # Update lyrics if provided
+    if lyrics is not None:
+        lyrics_text = lyrics.strip()
+        is_synced = lyrics_text.startswith("[") and "]" in lyrics_text.split("\n")[0]
+
+        # Save .lrc file
+        lrc_path = track_path.with_suffix('.lrc')
+        lrc_path.write_text(lyrics_text, encoding='utf-8')
+
+        # Embed lyrics
+        plain_lyrics = lyrics_text
+        synced_lyrics = lyrics_text if is_synced else None
+
+        if is_synced:
+            import re
+            plain_lyrics = re.sub(r'\[\d{2}:\d{2}[.\d]*\]', '', lyrics_text)
+            plain_lyrics = '\n'.join(line.strip() for line in plain_lyrics.split('\n') if line.strip())
+
+        embed_lyrics_in_file(track_path, plain_lyrics, synced_lyrics)
+
+    return {"status": "ok", "message": "Track updated"}
+
+
+@app.post("/api/metadata")
+async def update_metadata(
+    file_path: str = Form(...),
+    title: str = Form(None),
+    artist: str = Form(None),
+    album: str = Form(None),
+    date: str = Form(None),
+    track_number: str = Form(None),
+):
+    """Update track metadata."""
+    from .lyrics import update_metadata_in_file
+
+    # Validate file path
+    track_path = Path(file_path)
+    if not track_path.is_absolute():
+        track_path = MUSIC_DIR / track_path
+
+    if not track_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    success = update_metadata_in_file(track_path, {
+        "title": title,
+        "artist": artist,
+        "album": album,
+        "date": date,
+        "track_number": track_number
+    })
+
+    if success:
+        return {"status": "ok", "message": "Metadata updated"}
+    raise HTTPException(status_code=500, detail="Failed to update metadata")
 
 
 @app.post("/api/lyrics")

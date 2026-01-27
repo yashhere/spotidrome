@@ -4,19 +4,26 @@ FROM python:3.12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     wget \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+
+# Install dependencies using uv
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
 
 # Copy application
 COPY . .
 
 # Create data directory
 RUN mkdir -p /app/data
+
+# Place executables in PATH (uv installs to .venv by default)
+ENV PATH="/app/.venv/bin:$PATH"
 
 # Expose port
 EXPOSE 8095
