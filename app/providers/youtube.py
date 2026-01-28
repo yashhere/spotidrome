@@ -5,6 +5,7 @@ YouTube provider - fetches playlists/tracks from YouTube/YouTube Music.
 import json
 import re
 import subprocess
+import unicodedata
 from pathlib import Path
 
 from .base import Track
@@ -14,7 +15,11 @@ from .spotify import SpotifyProvider
 class YouTubeProvider:
     """YouTube/YouTube Music playlist/video provider using yt-dlp."""
 
-    def __init__(self, cookies: str | None = None, spotify_provider: SpotifyProvider | None = None):
+    def __init__(
+        self,
+        cookies: str | None = None,
+        spotify_provider: SpotifyProvider | None = None,
+    ):
         """
         Args:
             cookies: Path to cookies.txt or browser name (chrome, firefox, etc.)
@@ -23,7 +28,11 @@ class YouTubeProvider:
         self.cookies = cookies
         self.spotify_provider = spotify_provider
 
-    def configure(self, cookies: str | None = None, spotify_provider: SpotifyProvider | None = None) -> None:
+    def configure(
+        self,
+        cookies: str | None = None,
+        spotify_provider: SpotifyProvider | None = None,
+    ) -> None:
         """Configure provider settings."""
         if cookies is not None:
             self.cookies = cookies
@@ -32,11 +41,9 @@ class YouTubeProvider:
 
     def supports_url(self, url: str) -> bool:
         """Check if URL is a YouTube URL."""
-        return any(domain in url for domain in [
-            "youtube.com",
-            "youtu.be",
-            "music.youtube.com"
-        ])
+        return any(
+            domain in url for domain in ["youtube.com", "youtu.be", "music.youtube.com"]
+        )
 
     def _get_cookie_args(self) -> list[str]:
         """Build cookie arguments for yt-dlp."""
@@ -64,10 +71,21 @@ class YouTubeProvider:
 
         # Clean up title (remove common suffixes)
         for suffix in [
-            "(Official Video)", "(Official Audio)", "(Lyric Video)",
-            "(Official Music Video)", "[Official Video]", "[Official Audio]",
-            "| Official Video", "| Official Audio", "(Audio)", "[Audio]",
-            "(Full Video)", "(HD)", "(4K)", "4K UHD", "HD Video"
+            "(Official Video)",
+            "(Official Audio)",
+            "(Lyric Video)",
+            "(Official Music Video)",
+            "[Official Video]",
+            "[Official Audio]",
+            "| Official Video",
+            "| Official Audio",
+            "(Audio)",
+            "[Audio]",
+            "(Full Video)",
+            "(HD)",
+            "(4K)",
+            "4K UHD",
+            "HD Video",
         ]:
             track_title = track_title.replace(suffix, "").strip()
 
@@ -75,18 +93,24 @@ class YouTubeProvider:
 
     def _normalize(self, text: str) -> set[str]:
         """Normalize text for comparison - lowercase, remove punctuation, split into words."""
-        import unicodedata
+
         # Normalize unicode
-        text = unicodedata.normalize('NFKD', text)
+        text = unicodedata.normalize("NFKD", text)
         # Lowercase and remove non-alphanumeric
-        text = re.sub(r'[^\w\s]', ' ', text.lower())
+        text = re.sub(r"[^\w\s]", " ", text.lower())
         # Split into words, filter short ones
         return {w for w in text.split() if len(w) > 2}
 
-    def _validate_match(self, youtube_artist: str, youtube_title: str, spotify_track: Track) -> bool:
+    def _validate_match(
+        self, youtube_artist: str, youtube_title: str, spotify_track: Track
+    ) -> bool:
         """Check if Spotify result actually matches the YouTube video."""
         # Get Spotify artist and title
-        spotify_artist = spotify_track.get("artists", [""])[0] if spotify_track.get("artists") else ""
+        spotify_artist = (
+            spotify_track.get("artists", [""])[0]
+            if spotify_track.get("artists")
+            else ""
+        )
         spotify_title = spotify_track.get("name", "")
 
         # Normalize all text
@@ -100,13 +124,17 @@ class YouTubeProvider:
 
         # Check title overlap (at least 30% of Spotify title words should be in YouTube title)
         if sp_title_words:
-            title_overlap_ratio = len(sp_title_words & yt_title_words) / len(sp_title_words)
+            title_overlap_ratio = len(sp_title_words & yt_title_words) / len(
+                sp_title_words
+            )
         else:
             title_overlap_ratio = 0
 
         # Consider it a match if artist matches AND title has some overlap
         # Or if title has very strong overlap (>50%)
-        return (artist_overlap and title_overlap_ratio >= 0.3) or title_overlap_ratio >= 0.5
+        return (
+            artist_overlap and title_overlap_ratio >= 0.3
+        ) or title_overlap_ratio >= 0.5
 
     def _enrich_with_spotify(self, artist: str, title: str) -> Track | None:
         """Try to find matching track on Spotify for richer metadata."""
@@ -130,13 +158,7 @@ class YouTubeProvider:
 
     def get_track(self, url: str) -> Track | None:
         """Fetch single video info from YouTube URL."""
-        cmd = [
-            "yt-dlp",
-            *self._get_cookie_args(),
-            "--dump-json",
-            "--no-download",
-            url
-        ]
+        cmd = ["yt-dlp", *self._get_cookie_args(), "--dump-json", "--no-download", url]
 
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -159,7 +181,9 @@ class YouTubeProvider:
                 artists=[artist],
                 album=None,
                 cover_url=data.get("thumbnail"),
-                duration_ms=int(data.get("duration", 0) * 1000) if data.get("duration") else None,
+                duration_ms=int(data.get("duration", 0) * 1000)
+                if data.get("duration")
+                else None,
                 release_date=data.get("upload_date"),
                 track_number=None,
                 artist_ids=[],
@@ -176,12 +200,14 @@ class YouTubeProvider:
             "--dump-json",
             "--flat-playlist",
             "--no-download",
-            url
+            url,
         ]
 
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            entries = [json.loads(line) for line in result.stdout.strip().split("\n") if line]
+            entries = [
+                json.loads(line) for line in result.stdout.strip().split("\n") if line
+            ]
 
             if not entries:
                 return "YouTube Playlist", []
@@ -191,7 +217,9 @@ class YouTubeProvider:
 
             for entry in entries:
                 video_title = entry.get("title", "")
-                video_uploader = entry.get("uploader") or entry.get("channel", "Unknown")
+                video_uploader = entry.get("uploader") or entry.get(
+                    "channel", "Unknown"
+                )
                 video_url = entry.get("url") or entry.get("webpage_url", "")
 
                 if not video_title:
@@ -205,17 +233,21 @@ class YouTubeProvider:
                     spotify_track["source_url"] = video_url
                     tracks.append(spotify_track)
                 else:
-                    tracks.append(Track(
-                        name=title,
-                        artists=[artist],
-                        album=None,
-                        cover_url=entry.get("thumbnail"),
-                        duration_ms=int(entry.get("duration", 0) * 1000) if entry.get("duration") else None,
-                        release_date=None,
-                        track_number=None,
-                        artist_ids=[],
-                        source_url=video_url,
-                    ))
+                    tracks.append(
+                        Track(
+                            name=title,
+                            artists=[artist],
+                            album=None,
+                            cover_url=entry.get("thumbnail"),
+                            duration_ms=int(entry.get("duration", 0) * 1000)
+                            if entry.get("duration")
+                            else None,
+                            release_date=None,
+                            track_number=None,
+                            artist_ids=[],
+                            source_url=video_url,
+                        )
+                    )
 
             return playlist_name, tracks
 

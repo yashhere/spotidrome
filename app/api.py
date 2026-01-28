@@ -4,14 +4,19 @@ FastAPI application for Spotidrome.
 
 import logging
 import os
+import re
 from pathlib import Path
 
-from fastapi import FastAPI, Request, Form, HTTPException, UploadFile, File
+import uvicorn
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from mutagen.easyid3 import EasyID3
+from mutagen.id3 import APIC, ID3
+from mutagen.id3._util import ID3NoHeaderError
 
-from .models import Settings
+from .lyrics import embed_lyrics_in_file, update_metadata_in_file
 from .worker import JobWorker
 
 # Configure logging
@@ -19,7 +24,7 @@ log_level = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
     level=getattr(logging, log_level, logging.INFO),
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
@@ -35,7 +40,9 @@ MUSIC_DIR = Path(os.getenv("MUSIC_DIR", "/music"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 # Initialize FastAPI
-app = FastAPI(title="Spotidrome", description="Music downloader with Spotify/YouTube support")
+app = FastAPI(
+    title="Spotidrome", description="Music downloader with Spotify/YouTube support"
+)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
@@ -52,10 +59,13 @@ worker = JobWorker(
 async def index(request: Request):
     """Main page."""
     jobs = worker.get_all_jobs()
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "jobs": jobs,
-    })
+    return templates.TemplateResponse(
+        "index.html",
+        {
+            "request": request,
+            "jobs": jobs,
+        },
+    )
 
 
 @app.post("/api/download", response_class=HTMLResponse)
@@ -67,20 +77,26 @@ async def start_download(request: Request, url: str = Form(...)):
     job = worker.create_job(url.strip())
 
     # Return job card partial for HTMX
-    return templates.TemplateResponse("partials/job_card.html", {
-        "request": request,
-        "job": job,
-    })
+    return templates.TemplateResponse(
+        "partials/job_card.html",
+        {
+            "request": request,
+            "job": job,
+        },
+    )
 
 
 @app.get("/api/jobs", response_class=HTMLResponse)
 async def get_jobs(request: Request):
     """Get all jobs as HTML partial."""
     jobs = worker.get_all_jobs()
-    return templates.TemplateResponse("partials/job_list.html", {
-        "request": request,
-        "jobs": jobs,
-    })
+    return templates.TemplateResponse(
+        "partials/job_list.html",
+        {
+            "request": request,
+            "jobs": jobs,
+        },
+    )
 
 
 @app.get("/api/jobs/{job_id}", response_class=HTMLResponse)
@@ -90,10 +106,13 @@ async def get_job(request: Request, job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    return templates.TemplateResponse("partials/job_card.html", {
-        "request": request,
-        "job": job,
-    })
+    return templates.TemplateResponse(
+        "partials/job_card.html",
+        {
+            "request": request,
+            "job": job,
+        },
+    )
 
 
 @app.delete("/api/jobs/{job_id}", response_class=HTMLResponse)
@@ -101,10 +120,13 @@ async def cancel_job(request: Request, job_id: str):
     """Cancel a job."""
     if worker.cancel_job(job_id):
         job = worker.get_job(job_id)
-        return templates.TemplateResponse("partials/job_card.html", {
-            "request": request,
-            "job": job,
-        })
+        return templates.TemplateResponse(
+            "partials/job_card.html",
+            {
+                "request": request,
+                "job": job,
+            },
+        )
     raise HTTPException(status_code=400, detail="Cannot cancel job")
 
 
@@ -113,11 +135,6 @@ async def get_library(request: Request, q: str | None = None):
     """Get library browser partial."""
     tracks = []
     if MUSIC_DIR.exists():
-        try:
-            from mutagen.easyid3 import EasyID3
-        except ImportError:
-            EasyID3 = None
-
         search_query = q.lower().strip() if q else ""
 
         for mp3_file in sorted(MUSIC_DIR.rglob("*.mp3")):
@@ -125,43 +142,48 @@ async def get_library(request: Request, q: str | None = None):
                 "file_path": str(mp3_file.relative_to(MUSIC_DIR)),
                 "filename": mp3_file.name,
                 "title": mp3_file.stem.replace("_", " "),
-                "artist": mp3_file.parent.name.replace("_", " ") if mp3_file.parent != MUSIC_DIR else "",
+                "artist": mp3_file.parent.name.replace("_", " ")
+                if mp3_file.parent != MUSIC_DIR
+                else "",
                 "album": "",
                 "year": "",
             }
 
             # Try to read ID3 metadata
-            if EasyID3:
-                try:
-                    audio = EasyID3(mp3_file)
-                    track["title"] = audio.get("title", [track["title"]])[0]
-                    track["artist"] = audio.get("artist", [track["artist"]])[0]
-                    track["album"] = audio.get("album", [""])[0]
-                    track["year"] = audio.get("date", [""])[0]
-                except Exception:
-                    pass
+            try:
+                audio = EasyID3(mp3_file)
+                track["title"] = audio.get("title", [track["title"]])[0]
+                track["artist"] = audio.get("artist", [track["artist"]])[0]
+                track["album"] = audio.get("album", [""])[0]
+                track["year"] = audio.get("date", [""])[0]
+            except Exception:
+                pass
 
             # Filter if query provided
             if search_query:
-                if (search_query not in track["title"].lower() and
-                    search_query not in track["artist"].lower() and
-                    search_query not in track["album"].lower()):
+                if (
+                    search_query not in track["title"].lower()
+                    and search_query not in track["artist"].lower()
+                    and search_query not in track["album"].lower()
+                ):
                     continue
 
             tracks.append(track)
 
     # Return partial if requested via HTMX search
     if request.headers.get("HX-Target") == "library-list-container":
-        return templates.TemplateResponse("partials/library_list.html", {
-            "request": request,
-            "tracks": tracks
-        })
+        return templates.TemplateResponse(
+            "partials/library_list.html", {"request": request, "tracks": tracks}
+        )
 
-    return templates.TemplateResponse("partials/library.html", {
-        "request": request,
-        "tracks": tracks,
-        "total_tracks": len(tracks),
-    })
+    return templates.TemplateResponse(
+        "partials/library.html",
+        {
+            "request": request,
+            "tracks": tracks,
+            "total_tracks": len(tracks),
+        },
+    )
 
 
 @app.get("/api/tracks/art")
@@ -175,9 +197,8 @@ async def get_album_art(file_path: str):
         raise HTTPException(status_code=404, detail="File not found")
 
     try:
-        from mutagen.id3 import ID3
         audio = ID3(track_path)
-        apic = audio.getall('APIC')
+        apic = audio.getall("APIC")
         if apic:
             return Response(content=apic[0].data, media_type=apic[0].mime)
     except Exception:
@@ -197,16 +218,9 @@ async def get_lyrics_editor(request: Request, file_path: str):
         raise HTTPException(status_code=404, detail="File not found")
 
     # Fetch existing metadata
-    metadata = {
-        "title": "",
-        "artist": "",
-        "album": "",
-        "date": "",
-        "track_number": ""
-    }
+    metadata = {"title": "", "artist": "", "album": "", "date": "", "track_number": ""}
 
     try:
-        from mutagen.easyid3 import EasyID3
         audio = EasyID3(track_path)
         metadata["title"] = audio.get("title", [""])[0]
         metadata["artist"] = audio.get("artist", [""])[0]
@@ -220,17 +234,16 @@ async def get_lyrics_editor(request: Request, file_path: str):
     lyrics = ""
 
     # Check for .lrc file first
-    lrc_path = track_path.with_suffix('.lrc')
+    lrc_path = track_path.with_suffix(".lrc")
     if lrc_path.exists():
         try:
-            lyrics = lrc_path.read_text(encoding='utf-8')
+            lyrics = lrc_path.read_text(encoding="utf-8")
         except Exception:
             pass
 
     # Fallback to embedded USLT
     if not lyrics:
         try:
-            from mutagen.id3 import ID3
             audio = ID3(track_path)
             uslt = audio.getall("USLT")
             if uslt:
@@ -241,21 +254,23 @@ async def get_lyrics_editor(request: Request, file_path: str):
     # Check for album art
     has_art = False
     try:
-        from mutagen.id3 import ID3
         audio = ID3(track_path)
-        if audio.getall('APIC'):
+        if audio.getall("APIC"):
             has_art = True
     except Exception:
         pass
 
-    return templates.TemplateResponse("partials/lyrics_edit.html", {
-        "request": request,
-        "file_path": file_path,
-        "lyrics": lyrics,
-        "metadata": metadata,
-        "filename": track_path.name,
-        "has_art": has_art
-    })
+    return templates.TemplateResponse(
+        "partials/lyrics_edit.html",
+        {
+            "request": request,
+            "file_path": file_path,
+            "lyrics": lyrics,
+            "metadata": metadata,
+            "filename": track_path.name,
+            "has_art": has_art,
+        },
+    )
 
 
 @app.post("/api/tracks/update")
@@ -266,11 +281,12 @@ async def update_track(
     album: str = Form(None),
     date: str = Form(None),
     track_number: str = Form(None),
-    lyrics: str = Form("")
+    lyrics: str = Form(""),
 ):
     """Update track metadata and lyrics."""
-    logger.info(f"update_track called - lyrics is None: {lyrics is None}, lyrics repr: {repr(lyrics)[:100] if lyrics else 'None'}")
-    from .lyrics import update_metadata_in_file, embed_lyrics_in_file
+    logger.info(
+        f"update_track called - lyrics is None: {lyrics is None}, lyrics repr: {repr(lyrics)[:100] if lyrics else 'None'}"
+    )
 
     # Validate file path
     track_path = Path(file_path)
@@ -288,19 +304,24 @@ async def update_track(
         raise HTTPException(status_code=404, detail="File not found")
 
     # Update metadata
-    update_metadata_in_file(track_path, {
-        "title": title,
-        "artist": artist,
-        "album": album,
-        "date": date,
-        "track_number": track_number
-    })
+    update_metadata_in_file(
+        track_path,
+        {
+            "title": title,
+            "artist": artist,
+            "album": album,
+            "date": date,
+            "track_number": track_number,
+        },
+    )
 
     # Update lyrics if provided
     if lyrics is not None:
         lyrics_text = lyrics.strip()
-        lrc_path = track_path.with_suffix('.lrc')
-        logger.info(f"Lyrics update - raw len: {len(lyrics)}, stripped len: {len(lyrics_text)}, empty: {not lyrics_text}")
+        lrc_path = track_path.with_suffix(".lrc")
+        logger.info(
+            f"Lyrics update - raw len: {len(lyrics)}, stripped len: {len(lyrics_text)}, empty: {not lyrics_text}"
+        )
 
         if not lyrics_text:
             # Empty lyrics - remove .lrc file and embedded lyrics
@@ -308,125 +329,39 @@ async def update_track(
                 lrc_path.unlink()
             # Remove embedded lyrics
             try:
-                from mutagen.id3 import ID3
                 audio = ID3(track_path)
-                audio.delall('USLT')
-                audio.delall('SYLT')
+                audio.delall("USLT")
+                audio.delall("SYLT")
                 audio.save()
             except Exception:
                 pass
         else:
             # Non-empty lyrics - save and embed
-            is_synced = lyrics_text.startswith("[") and "]" in lyrics_text.split("\n")[0]
+            is_synced = (
+                lyrics_text.startswith("[") and "]" in lyrics_text.split("\n")[0]
+            )
 
             # Save .lrc file
-            lrc_path.write_text(lyrics_text, encoding='utf-8')
+            lrc_path.write_text(lyrics_text, encoding="utf-8")
 
             # Embed lyrics
             plain_lyrics = lyrics_text
             synced_lyrics = lyrics_text if is_synced else None
 
             if is_synced:
-                import re
-                plain_lyrics = re.sub(r'\[\d{2}:\d{2}[.\d]*\]', '', lyrics_text)
-                plain_lyrics = '\n'.join(line.strip() for line in plain_lyrics.split('\n') if line.strip())
+                plain_lyrics = re.sub(r"\[\d{2}:\d{2}[.\d]*\]", "", lyrics_text)
+
+                plain_lyrics = "\n".join(
+                    line.strip() for line in plain_lyrics.split("\n") if line.strip()
+                )
 
             embed_lyrics_in_file(track_path, plain_lyrics, synced_lyrics)
 
     return {"status": "ok", "message": "Track updated"}
 
 
-@app.post("/api/metadata")
-async def update_metadata(
-    file_path: str = Form(...),
-    title: str = Form(None),
-    artist: str = Form(None),
-    album: str = Form(None),
-    date: str = Form(None),
-    track_number: str = Form(None),
-):
-    """Update track metadata."""
-    from .lyrics import update_metadata_in_file
-
-    # Validate file path
-    track_path = Path(file_path)
-    if not track_path.is_absolute():
-        track_path = MUSIC_DIR / track_path
-
-    if not track_path.exists():
-        raise HTTPException(status_code=404, detail="File not found")
-
-    success = update_metadata_in_file(track_path, {
-        "title": title,
-        "artist": artist,
-        "album": album,
-        "date": date,
-        "track_number": track_number
-    })
-
-    if success:
-        return {"status": "ok", "message": "Metadata updated"}
-    raise HTTPException(status_code=500, detail="Failed to update metadata")
-
-
-@app.post("/api/lyrics")
-async def update_lyrics(
-    file_path: str = Form(...),
-    lyrics: str = Form(...),
-):
-    """Update lyrics for a track - saves .lrc file and re-embeds in MP3."""
-    from .lyrics import embed_lyrics_in_file
-
-    # Validate file path is within music dir
-    track_path = Path(file_path)
-    if not track_path.is_absolute():
-        track_path = MUSIC_DIR / track_path
-
-    try:
-        track_path = track_path.resolve()
-        if not str(track_path).startswith(str(MUSIC_DIR.resolve())):
-            raise HTTPException(status_code=400, detail="Invalid file path")
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid file path")
-
-    if not track_path.exists():
-        raise HTTPException(status_code=404, detail="File not found")
-
-    # Determine if synced (LRC format) or plain lyrics
-    lyrics_text = lyrics.strip()
-    is_synced = lyrics_text.startswith("[") and "]" in lyrics_text.split("\n")[0]
-
-    # Save .lrc file
-    lrc_path = track_path.with_suffix('.lrc')
-    lrc_path.write_text(lyrics_text, encoding='utf-8')
-    logger.info(f"Saved lyrics to: {lrc_path}")
-
-    # Embed lyrics in MP3
-    try:
-        plain_lyrics = lyrics_text
-        synced_lyrics = lyrics_text if is_synced else None
-
-        # Convert LRC to plain if synced
-        if is_synced:
-            # Strip timestamps for plain version
-            import re
-            plain_lyrics = re.sub(r'\[\d{2}:\d{2}[.\d]*\]', '', lyrics_text)
-            plain_lyrics = '\n'.join(line.strip() for line in plain_lyrics.split('\n') if line.strip())
-
-        embed_lyrics_in_file(track_path, plain_lyrics, synced_lyrics)
-        logger.info(f"Embedded lyrics in: {track_path}")
-    except Exception as e:
-        logger.error(f"Failed to embed lyrics: {e}")
-        # Still return success since .lrc was saved
-
-    return {"status": "ok", "message": "Lyrics updated"}
-
-
 @app.post("/api/tracks/art")
-async def update_album_art(
-    file_path: str = Form(...),
-    art: UploadFile = File(...)
-):
+async def update_album_art(file_path: str = Form(...), art: UploadFile = File(...)):
     """Update album art for a track."""
     track_path = Path(file_path)
     if not track_path.is_absolute():
@@ -444,9 +379,6 @@ async def update_album_art(
     mime_type = art.content_type or "image/jpeg"
 
     try:
-        from mutagen.id3 import ID3, APIC
-        from mutagen.id3._util import ID3NoHeaderError
-
         try:
             audio = ID3(track_path)
         except ID3NoHeaderError:
@@ -455,22 +387,25 @@ async def update_album_art(
             audio = ID3(track_path)
 
         # Remove existing album art
-        audio.delall('APIC')
+        audio.delall("APIC")
 
         # Add new album art
-        audio.add(APIC(
-            encoding=3,
-            mime=mime_type,
-            type=3,  # Cover (front)
-            desc='Cover',
-            data=art_data
-        ))
+        audio.add(
+            APIC(
+                encoding=3,
+                mime=mime_type,
+                type=3,  # Cover (front)
+                desc="Cover",
+                data=art_data,
+            )
+        )
         audio.save()
         logger.info(f"Updated album art for: {track_path}")
         return {"status": "ok", "message": "Album art updated"}
     except Exception as e:
         logger.error(f"Failed to update album art: {e}")
         raise HTTPException(status_code=500, detail="Failed to update album art")
+
 
 @app.get("/health")
 async def health():
@@ -479,5 +414,4 @@ async def health():
 
 
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8095)

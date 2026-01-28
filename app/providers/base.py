@@ -7,6 +7,7 @@ from typing import Protocol, TypedDict
 
 class Track(TypedDict):
     """Common track format across all providers."""
+
     name: str
     artists: list[str]
     album: str | None

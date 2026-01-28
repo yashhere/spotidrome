@@ -4,11 +4,13 @@ Pydantic models for API requests/responses and job state.
 
 from datetime import datetime
 from enum import Enum
+
 from pydantic import BaseModel
 
 
 class JobStatus(str, Enum):
     """Status of a download job."""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -18,12 +20,14 @@ class JobStatus(str, Enum):
 
 class DownloadRequest(BaseModel):
     """Request to start a download job."""
+
     url: str
     sync_to_navidrome: bool = False
 
 
 class JobProgress(BaseModel):
     """Progress information for a download job."""
+
     current: int = 0
     total: int = 0
     current_track: str | None = None
@@ -31,6 +35,7 @@ class JobProgress(BaseModel):
 
 class DownloadedTrack(BaseModel):
     """Info about a downloaded track for UI display."""
+
     name: str
     artist: str
     album: str | None = None
@@ -41,6 +46,7 @@ class DownloadedTrack(BaseModel):
 
 class Job(BaseModel):
     """A download job."""
+
     id: str
     url: str
     playlist_name: str | None = None
@@ -56,6 +62,7 @@ class Job(BaseModel):
 
 class Settings(BaseModel):
     """Application settings."""
+
     spotify_client_id: str | None = None
     spotify_client_secret: str | None = None
     navidrome_url: str | None = None

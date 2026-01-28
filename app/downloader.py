@@ -10,8 +10,12 @@ import urllib.request
 from pathlib import Path
 from typing import Callable
 
-from .providers.base import Track
+from mutagen.easyid3 import EasyID3
+from mutagen.id3 import APIC, ID3, USLT, Encoding
+from mutagen.id3._util import ID3NoHeaderError
+
 from .lyrics import LyricsProvider
+from .providers.base import Track
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +23,11 @@ logger = logging.getLogger(__name__)
 class TrackDownloader:
     """Downloads tracks from YouTube and applies metadata."""
 
-    def __init__(self, output_dir: Path, progress_callback: Callable[[str, int, int], None] | None = None):
+    def __init__(
+        self,
+        output_dir: Path,
+        progress_callback: Callable[[str, int, int], None] | None = None,
+    ):
         """
         Args:
             output_dir: Directory to save downloaded files
@@ -33,15 +41,19 @@ class TrackDownloader:
     def _sanitize_filename(self, name: str) -> str:
         """Create safe filename (ASCII with underscores)."""
         # Normalize unicode and convert to ASCII
-        name = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode('ascii')
+        name = (
+            unicodedata.normalize("NFKD", name)
+            .encode("ascii", "ignore")
+            .decode("ascii")
+        )
         # Remove invalid filesystem characters
-        name = re.sub(r'[<>:"/\\|?*\[\]\']', '', name)
+        name = re.sub(r'[<>:"/\\|?*\[\]\']', "", name)
         # Replace spaces with underscores
-        name = re.sub(r'\s+', '_', name)
+        name = re.sub(r"\s+", "_", name)
         # Remove multiple underscores
-        name = re.sub(r'_+', '_', name)
+        name = re.sub(r"_+", "_", name)
         # Trim underscores from ends
-        name = name.strip('_')
+        name = name.strip("_")
         return name[:180]  # Limit length
 
     def _report_progress(self, status: str, current: int = 0, total: int = 0) -> None:
@@ -58,9 +70,6 @@ class TrackDownloader:
         missing = {"album_art": False, "lyrics": False, "lrc_file": False}
 
         try:
-            from mutagen.id3 import ID3
-            from mutagen.id3._util import ID3NoHeaderError
-
             try:
                 audio = ID3(file_path)
             except ID3NoHeaderError:
@@ -68,15 +77,15 @@ class TrackDownloader:
                 return {"album_art": True, "lyrics": True, "lrc_file": True}
 
             # Check for album art (APIC frame)
-            if not audio.getall('APIC'):
+            if not audio.getall("APIC"):
                 missing["album_art"] = True
 
             # Check for embedded lyrics (USLT frame)
-            if not audio.getall('USLT'):
+            if not audio.getall("USLT"):
                 missing["lyrics"] = True
 
             # Check for .lrc file
-            lrc_path = file_path.with_suffix('.lrc')
+            lrc_path = file_path.with_suffix(".lrc")
             if not lrc_path.exists():
                 missing["lrc_file"] = True
 
@@ -114,8 +123,12 @@ class TrackDownloader:
 
             if any(missing.values()):
                 missing_items = [k for k, v in missing.items() if v]
-                logger.info(f"Updating metadata ({', '.join(missing_items)}): {safe_artist}/{safe_title}.mp3")
-                self._report_progress(f"Updating metadata: {safe_artist}/{safe_title}.mp3")
+                logger.info(
+                    f"Updating metadata ({', '.join(missing_items)}): {safe_artist}/{safe_title}.mp3"
+                )
+                self._report_progress(
+                    f"Updating metadata: {safe_artist}/{safe_title}.mp3"
+                )
 
                 # Update album art if missing (via _tag_file which handles album art)
                 if missing.get("album_art"):
@@ -127,7 +140,9 @@ class TrackDownloader:
 
                 logger.info(f"Updated metadata for: {safe_artist}/{safe_title}.mp3")
             else:
-                logger.info(f"Already exists (complete): {safe_artist}/{safe_title}.mp3")
+                logger.info(
+                    f"Already exists (complete): {safe_artist}/{safe_title}.mp3"
+                )
                 self._report_progress(f"Already exists: {safe_artist}/{safe_title}.mp3")
 
             return output_path
@@ -147,9 +162,12 @@ class TrackDownloader:
             "yt-dlp",
             search_term,
             "--extract-audio",
-            "--audio-format", "mp3",
-            "--audio-quality", "0",
-            "--output", str(artist_dir / f"{safe_title}.%(ext)s"),
+            "--audio-format",
+            "mp3",
+            "--audio-quality",
+            "0",
+            "--output",
+            str(artist_dir / f"{safe_title}.%(ext)s"),
             "--no-playlist",
             "--no-warnings",
             "--quiet",
@@ -190,15 +208,11 @@ class TrackDownloader:
 
     def _tag_file(self, file_path: Path, track: Track) -> None:
         """Tag audio file with metadata and album art."""
-        try:
-            from mutagen.easyid3 import EasyID3
-            from mutagen.id3 import ID3NoHeaderError, ID3, APIC
-        except ImportError:
-            logger.warning("mutagen not installed, skipping tagging")
-            return
 
-        artist = track.get('artists', ['Unknown'])[0] if track.get('artists') else 'Unknown'
-        title = track.get('name', '')
+        artist = (
+            track.get("artists", ["Unknown"])[0] if track.get("artists") else "Unknown"
+        )
+        title = track.get("name", "")
 
         try:
             try:
@@ -208,39 +222,41 @@ class TrackDownloader:
                 audio_id3.save(file_path)
                 audio = EasyID3(file_path)
 
-            audio['title'] = title
-            audio['artist'] = track.get('artists', ['Unknown'])
-            audio['album'] = track.get('album', '') or 'Unknown Album'
+            audio["title"] = title
+            audio["artist"] = track.get("artists", ["Unknown"])
+            audio["album"] = track.get("album", "") or "Unknown Album"
 
-            if track.get('track_number'):
-                audio['tracknumber'] = str(track['track_number'])
+            if track.get("track_number"):
+                audio["tracknumber"] = str(track["track_number"])
 
-            if track.get('release_date'):
-                year = track['release_date'].split('-')[0]
-                audio['date'] = year
+            if track.get("release_date"):
+                year = track["release_date"].split("-")[0]
+                audio["date"] = year
 
             audio.save()
             logger.debug(f"Tagged: {artist} - {title}")
 
             # Embed album art from Spotify if available
-            cover_url = track.get('cover_url')
+            cover_url = track.get("cover_url")
             if cover_url:
                 try:
                     audio_id3 = ID3(file_path)
-                    req = urllib.request.Request(cover_url, headers={
-                        "User-Agent": "Mozilla/5.0"
-                    })
+                    req = urllib.request.Request(
+                        cover_url, headers={"User-Agent": "Mozilla/5.0"}
+                    )
                     with urllib.request.urlopen(req, timeout=10) as response:
                         cover_data = response.read()
 
-                    audio_id3.delall('APIC')
-                    audio_id3.add(APIC(
-                        encoding=3,
-                        mime='image/jpeg',
-                        type=3,
-                        desc='Cover',
-                        data=cover_data
-                    ))
+                    audio_id3.delall("APIC")
+                    audio_id3.add(
+                        APIC(
+                            encoding=3,
+                            mime="image/jpeg",
+                            type=3,
+                            desc="Cover",
+                            data=cover_data,
+                        )
+                    )
                     audio_id3.save()
                     logger.debug(f"Embedded album art for: {artist} - {title}")
                 except Exception as e:
@@ -251,8 +267,10 @@ class TrackDownloader:
 
     def _fetch_lyrics(self, file_path: Path, track: Track) -> None:
         """Fetch and save lyrics for a track."""
-        artist = track.get('artists', ['Unknown'])[0] if track.get('artists') else 'Unknown'
-        title = track.get('name', '')
+        artist = (
+            track.get("artists", ["Unknown"])[0] if track.get("artists") else "Unknown"
+        )
+        title = track.get("name", "")
 
         if not title:
             return
@@ -261,16 +279,13 @@ class TrackDownloader:
 
         if synced_lyrics:
             # Save as .lrc file
-            lrc_path = file_path.with_suffix('.lrc')
-            lrc_path.write_text(synced_lyrics, encoding='utf-8')
+            lrc_path = file_path.with_suffix(".lrc")
+            lrc_path.write_text(synced_lyrics, encoding="utf-8")
             logger.info(f"Saved synced lyrics: {lrc_path.name}")
 
         if plain_lyrics:
             # Embed plain lyrics in the file
             try:
-                from mutagen.id3 import ID3, USLT
-                from mutagen.id3._util import ID3NoHeaderError
-
                 try:
                     audio = ID3(file_path)
                 except ID3NoHeaderError:
@@ -279,16 +294,13 @@ class TrackDownloader:
                     audio = ID3(file_path)
 
                 # Remove existing lyrics
-                audio.delall('USLT')
+                audio.delall("USLT")
 
                 # Add plain lyrics
-                from mutagen.id3 import Encoding
-                audio.add(USLT(
-                    encoding=Encoding.UTF8,
-                    lang='xxx',
-                    desc='',
-                    text=plain_lyrics
-                ))
+
+                audio.add(
+                    USLT(encoding=Encoding.UTF8, lang="xxx", desc="", text=plain_lyrics)
+                )
                 audio.save()
                 logger.debug(f"Embedded plain lyrics for: {artist} - {title}")
             except Exception as e:
@@ -305,8 +317,8 @@ class TrackDownloader:
         logger.info(f"Starting download of {total} tracks")
 
         for i, track in enumerate(tracks, 1):
-            artist = track.get('artists', ['?'])[0] if track.get('artists') else '?'
-            title = track.get('name', '?')
+            artist = track.get("artists", ["?"])[0] if track.get("artists") else "?"
+            title = track.get("name", "?")
             logger.info(f"[{i}/{total}] Processing: {artist} - {title}")
             self._report_progress(f"[{i}/{total}] {artist} - {title}", i, total)
 

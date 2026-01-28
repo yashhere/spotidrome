@@ -8,7 +8,7 @@ import re
 import urllib.parse
 import urllib.request
 
-from .base import PlaylistProvider, Track
+from .base import Track
 
 
 class SpotifyProvider:
@@ -38,18 +38,22 @@ class SpotifyProvider:
             raise ValueError("Spotify credentials not configured")
 
         auth_url = "https://accounts.spotify.com/api/token"
-        auth_data = urllib.parse.urlencode({
-            "grant_type": "client_credentials"
-        }).encode()
+        auth_data = urllib.parse.urlencode(
+            {"grant_type": "client_credentials"}
+        ).encode()
 
         credentials = base64.b64encode(
             f"{self.client_id}:{self.client_secret}".encode()
         ).decode()
 
-        req = urllib.request.Request(auth_url, data=auth_data, headers={
-            "Authorization": f"Basic {credentials}",
-            "Content-Type": "application/x-www-form-urlencoded"
-        })
+        req = urllib.request.Request(
+            auth_url,
+            data=auth_data,
+            headers={
+                "Authorization": f"Basic {credentials}",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+        )
 
         with urllib.request.urlopen(req) as response:
             data = json.loads(response.read())
@@ -61,9 +65,7 @@ class SpotifyProvider:
         token = self._get_token()
         url = f"https://api.spotify.com/v1/{endpoint}"
 
-        req = urllib.request.Request(url, headers={
-            "Authorization": f"Bearer {token}"
-        })
+        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
 
         with urllib.request.urlopen(req) as response:
             return json.loads(response.read())
@@ -93,7 +95,9 @@ class SpotifyProvider:
             name=track_data.get("name", ""),
             artists=artists,
             album=album_data.get("name"),
-            cover_url=album_data.get("images", [{}])[0].get("url") if album_data.get("images") else None,
+            cover_url=album_data.get("images", [{}])[0].get("url")
+            if album_data.get("images")
+            else None,
             duration_ms=track_data.get("duration_ms"),
             release_date=album_data.get("release_date"),
             track_number=track_data.get("track_number"),
@@ -158,11 +162,7 @@ class SpotifyProvider:
     def search_track(self, query: str) -> Track | None:
         """Search for a track by query string."""
         try:
-            params = urllib.parse.urlencode({
-                "q": query,
-                "type": "track",
-                "limit": 1
-            })
+            params = urllib.parse.urlencode({"q": query, "type": "track", "limit": 1})
             data = self._api_request(f"search?{params}")
 
             items = data.get("tracks", {}).get("items", [])

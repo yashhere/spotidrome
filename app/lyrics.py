@@ -4,8 +4,14 @@ Lyrics provider - fetches lyrics from multiple sources.
 
 import json
 import logging
+import re
 import urllib.parse
 import urllib.request
+from pathlib import Path
+
+from mutagen.easyid3 import EasyID3
+from mutagen.id3 import ID3, SYLT, USLT, Encoding
+from mutagen.id3._util import ID3NoHeaderError
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +20,9 @@ class LyricsProvider:
     """Fetches lyrics from multiple sources."""
 
     def __init__(self):
-        self.user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+        self.user_agent = (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+        )
         self.mxm_token = None
 
     def get_lyrics(self, title: str, artist: str) -> tuple[str | None, str | None]:
@@ -27,13 +35,17 @@ class LyricsProvider:
         # Try Musixmatch first (best coverage, has synced lyrics)
         synced, plain = self._fetch_musixmatch(title, artist)
         if synced or plain:
-            logger.debug(f"Found lyrics via Musixmatch (synced={bool(synced)}, plain={bool(plain)})")
+            logger.debug(
+                f"Found lyrics via Musixmatch (synced={bool(synced)}, plain={bool(plain)})"
+            )
             return plain, synced
 
         # Try LRCLIB (has synced lyrics)
         synced, plain = self._fetch_lrclib(title, artist)
         if synced or plain:
-            logger.debug(f"Found lyrics via LRCLIB (synced={bool(synced)}, plain={bool(plain)})")
+            logger.debug(
+                f"Found lyrics via LRCLIB (synced={bool(synced)}, plain={bool(plain)})"
+            )
             return plain, synced
 
         # Fallback to lyrics.ovh for plain lyrics
@@ -47,10 +59,7 @@ class LyricsProvider:
     def _fetch_lrclib(self, title: str, artist: str) -> tuple[str | None, str | None]:
         """Fetch from LRCLIB (free, has synced lyrics)."""
         try:
-            query = urllib.parse.urlencode({
-                "track_name": title,
-                "artist_name": artist
-            })
+            query = urllib.parse.urlencode({"track_name": title, "artist_name": artist})
             url = f"https://lrclib.net/api/search?{query}"
 
             req = urllib.request.Request(url, headers={"User-Agent": self.user_agent})
@@ -86,19 +95,23 @@ class LyricsProvider:
 
         try:
             url = "https://apic-desktop.musixmatch.com/ws/1.1/token.get?app_id=web-desktop-app-v1.0"
-            req = urllib.request.Request(url, headers={
-                "User-Agent": self.user_agent,
-                "Cookie": "x-mxm-token-guid="
-            })
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": self.user_agent, "Cookie": "x-mxm-token-guid="},
+            )
             with urllib.request.urlopen(req, timeout=10) as response:
                 data = json.loads(response.read())
-                self.mxm_token = data.get("message", {}).get("body", {}).get("user_token")
+                self.mxm_token = (
+                    data.get("message", {}).get("body", {}).get("user_token")
+                )
                 return self.mxm_token
         except Exception as e:
             logger.debug(f"Failed to get Musixmatch token: {e}")
         return None
 
-    def _fetch_musixmatch(self, title: str, artist: str) -> tuple[str | None, str | None]:
+    def _fetch_musixmatch(
+        self, title: str, artist: str
+    ) -> tuple[str | None, str | None]:
         """Fetch from Musixmatch (good coverage, has synced lyrics)."""
         token = self._get_mxm_token()
         if not token:
@@ -106,16 +119,22 @@ class LyricsProvider:
 
         try:
             # Search for track
-            query = urllib.parse.urlencode({
-                "q_track": title,
-                "q_artist": artist,
-                "app_id": "web-desktop-app-v1.0",
-                "usertoken": token,
-                "format": "json"
-            })
-            search_url = f"https://apic-desktop.musixmatch.com/ws/1.1/track.search?{query}"
+            query = urllib.parse.urlencode(
+                {
+                    "q_track": title,
+                    "q_artist": artist,
+                    "app_id": "web-desktop-app-v1.0",
+                    "usertoken": token,
+                    "format": "json",
+                }
+            )
+            search_url = (
+                f"https://apic-desktop.musixmatch.com/ws/1.1/track.search?{query}"
+            )
 
-            req = urllib.request.Request(search_url, headers={"User-Agent": self.user_agent})
+            req = urllib.request.Request(
+                search_url, headers={"User-Agent": self.user_agent}
+            )
             with urllib.request.urlopen(req, timeout=10) as response:
                 data = json.loads(response.read())
 
@@ -131,10 +150,16 @@ class LyricsProvider:
             synced_lyrics = None
             try:
                 subtitle_url = f"https://apic-desktop.musixmatch.com/ws/1.1/track.subtitle.get?track_id={track_id}&subtitle_format=lrc&app_id=web-desktop-app-v1.0&usertoken={token}"
-                req = urllib.request.Request(subtitle_url, headers={"User-Agent": self.user_agent})
+                req = urllib.request.Request(
+                    subtitle_url, headers={"User-Agent": self.user_agent}
+                )
                 with urllib.request.urlopen(req, timeout=10) as response:
                     subtitle_data = json.loads(response.read())
-                    subtitle_body = subtitle_data.get("message", {}).get("body", {}).get("subtitle", {})
+                    subtitle_body = (
+                        subtitle_data.get("message", {})
+                        .get("body", {})
+                        .get("subtitle", {})
+                    )
                     synced_lyrics = subtitle_body.get("subtitle_body")
             except Exception:
                 pass
@@ -143,10 +168,14 @@ class LyricsProvider:
             plain_lyrics = None
             try:
                 lyrics_url = f"https://apic-desktop.musixmatch.com/ws/1.1/track.lyrics.get?track_id={track_id}&app_id=web-desktop-app-v1.0&usertoken={token}"
-                req = urllib.request.Request(lyrics_url, headers={"User-Agent": self.user_agent})
+                req = urllib.request.Request(
+                    lyrics_url, headers={"User-Agent": self.user_agent}
+                )
                 with urllib.request.urlopen(req, timeout=10) as response:
                     lyrics_data = json.loads(response.read())
-                    lyrics_body = lyrics_data.get("message", {}).get("body", {}).get("lyrics", {})
+                    lyrics_body = (
+                        lyrics_data.get("message", {}).get("body", {}).get("lyrics", {})
+                    )
                     plain_lyrics = lyrics_body.get("lyrics_body")
             except Exception:
                 pass
@@ -158,20 +187,17 @@ class LyricsProvider:
         return None, None
 
 
-
-
-
 def _parse_lrc_timestamp(timestamp: str) -> int:
     """Convert [mm:ss.xx] timestamp to milliseconds."""
     try:
-        minutes, seconds = timestamp.strip('[]').split(':')
-        if '.' in seconds:
-            secs, ms = seconds.split('.')
+        minutes, seconds = timestamp.strip("[]").split(":")
+        if "." in seconds:
+            secs, ms = seconds.split(".")
             if len(ms) == 2:
-                ms += '0'  # 12.34 -> 12.340
+                ms += "0"  # 12.34 -> 12.340
         else:
             secs = seconds
-            ms = '0'
+            ms = "0"
 
         total_ms = (int(minutes) * 60 * 1000) + (int(secs) * 1000) + int(ms)
         return total_ms
@@ -181,10 +207,10 @@ def _parse_lrc_timestamp(timestamp: str) -> int:
 
 def _parse_lrc(lrc_content: str) -> list[tuple[str, int]]:
     """Parse LRC content into list of (text, timestamp_ms)."""
-    import re
     result = []
+
     # Regex to match timestamps like [00:12.34] or [00:12.345]
-    pattern = re.compile(r'\[(\d{2}):(\d{2})[.:](\d{2,3})\]')
+    pattern = re.compile(r"\[(\d{2}):(\d{2})[.:](\d{2,3})\]")
 
     for line in lrc_content.splitlines():
         line = line.strip()
@@ -197,7 +223,7 @@ def _parse_lrc(lrc_content: str) -> list[tuple[str, int]]:
             continue
 
         # The text is strictly after the last timestamp
-        text = line[matches[-1].end():].strip()
+        text = line[matches[-1].end() :].strip()
 
         for match in matches:
             minutes = int(match.group(1))
@@ -218,7 +244,9 @@ def _parse_lrc(lrc_content: str) -> list[tuple[str, int]]:
     return result
 
 
-def embed_lyrics_in_file(file_path, plain_lyrics: str | None, synced_lyrics: str | None = None) -> bool:
+def embed_lyrics_in_file(
+    file_path, plain_lyrics: str | None, synced_lyrics: str | None = None
+) -> bool:
     """Embed lyrics into an MP3 file's ID3 tags.
 
     Args:
@@ -229,14 +257,6 @@ def embed_lyrics_in_file(file_path, plain_lyrics: str | None, synced_lyrics: str
     Returns:
         True if successful, False otherwise
     """
-    from pathlib import Path
-
-    try:
-        from mutagen.id3 import ID3, USLT, SYLT, Encoding
-        from mutagen.id3._util import ID3NoHeaderError
-    except ImportError:
-        logger.warning("mutagen not installed, cannot embed lyrics")
-        return False
 
     file_path = Path(file_path)
 
@@ -249,30 +269,34 @@ def embed_lyrics_in_file(file_path, plain_lyrics: str | None, synced_lyrics: str
             audio = ID3(file_path)
 
         # Remove existing lyrics
-        audio.delall('USLT')
-        audio.delall('SYLT')
+        audio.delall("USLT")
+        audio.delall("SYLT")
 
         # Add plain lyrics
         if plain_lyrics:
-            audio.add(USLT(
-                encoding=Encoding.UTF8,
-                lang='eng', # Use 'eng' instead of 'xxx' for better compatibility
-                desc='',
-                text=plain_lyrics
-            ))
+            audio.add(
+                USLT(
+                    encoding=Encoding.UTF8,
+                    lang="eng",  # Use 'eng' instead of 'xxx' for better compatibility
+                    desc="",
+                    text=plain_lyrics,
+                )
+            )
 
         # Add synced lyrics
         if synced_lyrics:
             parsed_lyrics = _parse_lrc(synced_lyrics)
             if parsed_lyrics:
-                audio.add(SYLT(
-                    encoding=Encoding.UTF8,
-                    lang='eng',
-                    format=2, # 2 = ms absolute timestamp
-                    type=1, # 1 = Lyrics
-                    desc='',
-                    text=parsed_lyrics
-                ))
+                audio.add(
+                    SYLT(
+                        encoding=Encoding.UTF8,
+                        lang="eng",
+                        format=2,  # 2 = ms absolute timestamp
+                        type=1,  # 1 = Lyrics
+                        desc="",
+                        text=parsed_lyrics,
+                    )
+                )
 
         audio.save()
         logger.info(f"Embedded lyrics (synced={bool(synced_lyrics)}) in: {file_path}")
@@ -293,13 +317,6 @@ def update_metadata_in_file(file_path, metadata: dict) -> bool:
     Returns:
         True if successful
     """
-    from pathlib import Path
-    try:
-        from mutagen.easyid3 import EasyID3
-        from mutagen.id3 import ID3NoHeaderError, ID3
-    except ImportError:
-        logger.warning("mutagen not installed")
-        return False
 
     file_path = Path(file_path)
 
@@ -315,22 +332,22 @@ def update_metadata_in_file(file_path, metadata: dict) -> bool:
             except Exception:
                 return False
 
-        if 'title' in metadata and metadata['title']:
-            audio['title'] = metadata['title']
+        if "title" in metadata and metadata["title"]:
+            audio["title"] = metadata["title"]
 
-        if 'artist' in metadata and metadata['artist']:
+        if "artist" in metadata and metadata["artist"]:
             # Handle multiple artists separated by ;
-            artists = [a.strip() for a in metadata['artist'].split(';') if a.strip()]
-            audio['artist'] = artists
+            artists = [a.strip() for a in metadata["artist"].split(";") if a.strip()]
+            audio["artist"] = artists
 
-        if 'album' in metadata and metadata['album']:
-            audio['album'] = metadata['album']
+        if "album" in metadata and metadata["album"]:
+            audio["album"] = metadata["album"]
 
-        if 'date' in metadata and metadata['date']:
-            audio['date'] = str(metadata['date'])
+        if "date" in metadata and metadata["date"]:
+            audio["date"] = str(metadata["date"])
 
-        if 'track_number' in metadata and metadata['track_number']:
-            audio['tracknumber'] = str(metadata['track_number'])
+        if "track_number" in metadata and metadata["track_number"]:
+            audio["tracknumber"] = str(metadata["track_number"])
 
         audio.save()
         logger.info(f"Updated metadata for: {file_path}")

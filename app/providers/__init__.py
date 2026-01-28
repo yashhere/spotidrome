@@ -6,7 +6,13 @@ from .base import PlaylistProvider, Track
 from .spotify import SpotifyProvider
 from .youtube import YouTubeProvider
 
-__all__ = ["PlaylistProvider", "Track", "SpotifyProvider", "YouTubeProvider", "get_provider"]
+__all__ = [
+    "PlaylistProvider",
+    "Track",
+    "SpotifyProvider",
+    "YouTubeProvider",
+    "get_provider",
+]
 
 # Provider instances (created lazily)
 _providers: list[PlaylistProvider] | None = None

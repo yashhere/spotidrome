@@ -6,11 +6,10 @@ import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
 
-from .models import Job, JobStatus, JobProgress
-from .providers import get_provider, SpotifyProvider, YouTubeProvider
 from .downloader import TrackDownloader
+from .models import DownloadedTrack, Job, JobProgress, JobStatus
+from .providers import SpotifyProvider, YouTubeProvider
 
 
 class JobWorker:
@@ -28,7 +27,9 @@ class JobWorker:
         self._lock = threading.Lock()
 
         # Configure providers
-        self.spotify_provider = SpotifyProvider(spotify_client_id, spotify_client_secret)
+        self.spotify_provider = SpotifyProvider(
+            spotify_client_id, spotify_client_secret
+        )
         self.youtube_provider = YouTubeProvider(youtube_cookies, self.spotify_provider)
 
     def update_settings(
@@ -122,29 +123,36 @@ class JobWorker:
             downloader = TrackDownloader(self.output_dir, progress_callback)
 
             # Download and collect track info
-            from .models import DownloadedTrack
             downloaded_tracks = []
 
             for i, track in enumerate(tracks, 1):
-                artist = track.get('artists', ['Unknown'])[0] if track.get('artists') else 'Unknown'
-                title = track.get('name', 'Unknown')
+                artist = (
+                    track.get("artists", ["Unknown"])[0]
+                    if track.get("artists")
+                    else "Unknown"
+                )
+                title = track.get("name", "Unknown")
 
-                progress_callback(f"[{i}/{len(tracks)}] {artist} - {title}", i, len(tracks))
+                progress_callback(
+                    f"[{i}/{len(tracks)}] {artist} - {title}", i, len(tracks)
+                )
 
                 path = downloader.download_track(track)
                 if path:
                     # Check for .lrc file
-                    lrc_path = path.with_suffix('.lrc')
+                    lrc_path = path.with_suffix(".lrc")
                     has_lyrics = lrc_path.exists()
 
-                    downloaded_tracks.append(DownloadedTrack(
-                        name=title,
-                        artist=artist,
-                        album=track.get('album'),
-                        cover_url=track.get('cover_url'),
-                        file_path=str(path),
-                        has_lyrics=has_lyrics,
-                    ))
+                    downloaded_tracks.append(
+                        DownloadedTrack(
+                            name=title,
+                            artist=artist,
+                            album=track.get("album"),
+                            cover_url=track.get("cover_url"),
+                            file_path=str(path),
+                            has_lyrics=has_lyrics,
+                        )
+                    )
 
             job.downloaded_files = [t.file_path for t in downloaded_tracks]
             job.tracks = downloaded_tracks
