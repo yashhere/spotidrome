@@ -1,9 +1,7 @@
 <div id="job-list">
-    {% for job in jobs %}
-        {% include "partials/job_card.html" %}
-    {% else %}
-        <div class="empty-state">
-            <p>No downloads yet. Paste a URL above to get started!</p>
-        </div>
-    {% endfor %}
+  {% for job in jobs %} {% include "partials/job_card.html" %} {% else %}
+  <div class="empty-state">
+    <p>No downloads yet. Paste a URL above to get started!</p>
+  </div>
+  {% endfor %}
 </div>

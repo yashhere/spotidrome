@@ -1,52 +1,67 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{% block title %}Spotidrome{% endblock %}</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css" />
     <script src="https://unpkg.com/htmx.org@2.0.8"></script>
-</head>
-<body>
+  </head>
+  <body>
     <!-- Mobile Warning Overlay -->
     <div class="mobile-warning" id="mobile-warning">
       <div class="mobile-warning-content">
         <div class="mobile-warning-icon">
-          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round">
+          <svg
+            width="64"
+            height="64"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
             <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
             <line x1="12" y1="18" x2="12.01" y2="18"></line>
           </svg>
         </div>
         <h2>Desktop Recommended</h2>
-        <p>This app is designed for desktop use. For the best experience, please use a larger screen.</p>
-        <button class="btn-primary" onclick="dismissMobileWarning()">Continue Anyway</button>
+        <p>
+          This app is designed for desktop use. For the best experience, please
+          use a larger screen.
+        </p>
+        <button class="btn-primary" onclick="dismissMobileWarning()">
+          Continue Anyway
+        </button>
       </div>
     </div>
     <script>
       // Check if user already dismissed the warning
-      if (localStorage.getItem('spotidrome-mobile-dismissed')) {
-        document.getElementById('mobile-warning').style.setProperty('display', 'none', 'important');
+      if (localStorage.getItem("spotidrome-mobile-dismissed")) {
+        document
+          .getElementById("mobile-warning")
+          .style.setProperty("display", "none", "important");
       }
       function dismissMobileWarning() {
-        document.getElementById('mobile-warning').style.setProperty('display', 'none', 'important');
-        localStorage.setItem('spotidrome-mobile-dismissed', 'true');
+        document
+          .getElementById("mobile-warning")
+          .style.setProperty("display", "none", "important");
+        localStorage.setItem("spotidrome-mobile-dismissed", "true");
       }
     </script>
 
     <div class="container">
-        <header>
-            <h1>Spotidrome</h1>
-            <p class="subtitle">Download music from Spotify & YouTube</p>
-        </header>
+      <header>
+        <h1>Spotidrome</h1>
+        <p class="subtitle">Download music from Spotify & YouTube</p>
+      </header>
 
-        <main>
-            {% block content %}{% endblock %}
-        </main>
+      <main>{% block content %}{% endblock %}</main>
 
-        <footer>
-            <p>Powered by yt-dlp & Spotify API</p>
-        </footer>
+      <footer>
+        <p>Powered by yt-dlp & Spotify API</p>
+      </footer>
     </div>
-</body>
+  </body>
 </html>

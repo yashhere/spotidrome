@@ -1,16 +1,24 @@
 <div class="library">
-    <div class="library-header">
-        <div class="header-content">
-            <h2>Music Library</h2>
-            <span class="library-stats">{{ total_tracks }} tracks</span>
-            </div>
-        <div class="search-container">
-          <input type="text" name="q" class="search-input" placeholder="Search library..." hx-get="/api/library"
-            hx-trigger="keyup changed delay:300ms, search" hx-target="#library-list-container" autocomplete="off">
-        </div>
-        </div>
-
-    <div id="library-list-container">
-      {% include "partials/library_list.html" %}
+  <div class="library-header">
+    <div class="header-content">
+      <h2>Music Library</h2>
+      <span class="library-stats">{{ total_tracks }} tracks</span>
     </div>
+    <div class="search-container">
+      <input
+        type="text"
+        name="q"
+        class="search-input"
+        placeholder="Search library..."
+        hx-get="/api/library"
+        hx-trigger="keyup changed delay:300ms, search"
+        hx-target="#library-list-container"
+        autocomplete="off"
+      />
+    </div>
+  </div>
+
+  <div id="library-list-container">
+    {% include "partials/library_list.html" %}
+  </div>
 </div>

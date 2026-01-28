@@ -1,69 +1,79 @@
-{% extends "base.html" %}
-
-{% block content %}
+{% extends "base.html" %} {% block content %}
 <section class="download-form">
-    <form hx-post="/api/download"
-          hx-target="#job-list"
-          hx-swap="afterbegin"
-          hx-on::after-request="this.reset()">
-        <div class="input-group">
-            <input type="text"
-                   name="url"
-                   placeholder="Paste Spotify or YouTube URL..."
-                   required
-                   autocomplete="off">
-            <button type="submit">
-                <span class="btn-text">Download</span>
-            </button>
-        </div>
-        <p class="hint">Supports: Spotify tracks/playlists/albums, YouTube videos/playlists</p>
-    </form>
+  <form
+    hx-post="/api/download"
+    hx-target="#job-list"
+    hx-swap="afterbegin"
+    hx-on::after-request="this.reset()"
+  >
+    <div class="input-group">
+      <input
+        type="text"
+        name="url"
+        placeholder="Paste Spotify or YouTube URL..."
+        required
+        autocomplete="off"
+      />
+      <button type="submit">
+        <span class="btn-text">Download</span>
+      </button>
+    </div>
+    <p class="hint">
+      Supports: Spotify tracks/playlists/albums, YouTube videos/playlists
+    </p>
+  </form>
 </section>
 
 <section class="tabs">
-    <button class="tab active" id="tab-downloads"
-            hx-get="/api/jobs"
-            hx-target="#content-area"
-            hx-swap="innerHTML"
-            hx-push-url="/#downloads"
-            hx-on:click="setActiveTab(this)">
-        Downloads
-    </button>
-    <button class="tab" id="tab-library"
-            hx-get="/api/library"
-            hx-target="#content-area"
-            hx-swap="innerHTML"
-            hx-push-url="/#library"
-            hx-on:click="setActiveTab(this)">
-        Library
-    </button>
+  <button
+    class="tab active"
+    id="tab-downloads"
+    hx-get="/api/jobs"
+    hx-target="#content-area"
+    hx-swap="innerHTML"
+    hx-push-url="/#downloads"
+    hx-on:click="setActiveTab(this)"
+  >
+    Downloads
+  </button>
+  <button
+    class="tab"
+    id="tab-library"
+    hx-get="/api/library"
+    hx-target="#content-area"
+    hx-swap="innerHTML"
+    hx-push-url="/#library"
+    hx-on:click="setActiveTab(this)"
+  >
+    Library
+  </button>
 </section>
 
 <script>
   function setActiveTab(btn) {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    btn.classList.add('active');
+    document
+      .querySelectorAll(".tab")
+      .forEach((t) => t.classList.remove("active"));
+    btn.classList.add("active");
   }
 
   // Restore tab on page load
-  document.addEventListener('DOMContentLoaded', function () {
+  document.addEventListener("DOMContentLoaded", function () {
     const hash = window.location.hash;
-    if (hash === '#library') {
-      setActiveTab(document.getElementById('tab-library'));
-      htmx.trigger('#tab-library', 'click');
+    if (hash === "#library") {
+      setActiveTab(document.getElementById("tab-library"));
+      htmx.trigger("#tab-library", "click");
     }
   });
 </script>
 
 <section id="content-area">
-    <div id="job-list">
-        {% for job in jobs %}
-            {% include "partials/job_card.html" %}
-        {% else %}
-            <div class="empty-state">
-                <p>No downloads yet. Paste a URL above to get started!</p>
-            </div>
-        {% endfor %}
+  <div id="job-list">
+    {% for job in jobs %} {% include "partials/job_card.html" %} {% else %}
+    <div class="empty-state">
+      <p>No downloads yet. Paste a URL above to get started!</p>
     </div>
+    {% endfor %}
+  </div>
 </section>
 {% endblock %}
