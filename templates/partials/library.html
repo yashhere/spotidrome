@@ -1,46 +1,16 @@
 <div class="library">
     <div class="library-header">
-        <h2>Music Library</h2>
-        <span class="library-stats">{{ total_tracks }} tracks</span>
-    </div>
+        <div class="header-content">
+            <h2>Music Library</h2>
+            <span class="library-stats">{{ total_tracks }} tracks</span>
+            </div>
+        <div class="search-container">
+          <input type="text" name="q" class="search-input" placeholder="Search library..." hx-get="/api/library"
+            hx-trigger="keyup changed delay:300ms, search" hx-target="#library-list-container" autocomplete="off">
+        </div>
+        </div>
 
-    {% if tracks %}
-    <div class="table-responsive">
-    <table class="library-table">
-      <thead>
-        <tr>
-          <th>Title</th>
-          <th>Artist</th>
-          <th>Album</th>
-          <th>Year</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for track in tracks %}
-        <tr>
-          <td class="track-title">{{ track.title }}</td>
-          <td>{{ track.artist }}</td>
-          <td>{{ track.album }}</td>
-          <td>{{ track.year }}</td>
-          <td class="track-actions">
-            <button class="btn-edit" hx-get="/api/tracks/edit?file_path={{ track.file_path | urlencode }}" hx-target="body"
-              hx-swap="beforeend">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                stroke-linecap="round" stroke-linejoin="round">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-              </svg>
-            </button>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div id="library-list-container">
+      {% include "partials/library_list.html" %}
     </div>
-    {% else %}
-    <div class="empty-state">
-      <p>No music downloaded yet.</p>
-    </div>
-    {% endif %}
 </div>

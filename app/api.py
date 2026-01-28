@@ -109,7 +109,7 @@ async def cancel_job(request: Request, job_id: str):
 
 
 @app.get("/api/library", response_class=HTMLResponse)
-async def get_library(request: Request):
+async def get_library(request: Request, q: str | None = None):
     """Get library browser partial."""
     tracks = []
     if MUSIC_DIR.exists():
@@ -117,6 +117,8 @@ async def get_library(request: Request):
             from mutagen.easyid3 import EasyID3
         except ImportError:
             EasyID3 = None
+
+        search_query = q.lower().strip() if q else ""
 
         for mp3_file in sorted(MUSIC_DIR.rglob("*.mp3")):
             track = {
@@ -139,7 +141,21 @@ async def get_library(request: Request):
                 except Exception:
                     pass
 
+            # Filter if query provided
+            if search_query:
+                if (search_query not in track["title"].lower() and
+                    search_query not in track["artist"].lower() and
+                    search_query not in track["album"].lower()):
+                    continue
+
             tracks.append(track)
+
+    # Return partial if requested via HTMX search
+    if request.headers.get("HX-Target") == "library-list-container":
+        return templates.TemplateResponse("partials/library_list.html", {
+            "request": request,
+            "tracks": tracks
+        })
 
     return templates.TemplateResponse("partials/library.html", {
         "request": request,
