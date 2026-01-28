@@ -8,6 +8,26 @@
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
 </head>
 <body>
+    <!-- Mobile Warning Overlay -->
+    <div class="mobile-warning" id="mobile-warning">
+      <div class="mobile-warning-content">
+        <div class="mobile-warning-icon">📱</div>
+        <h2>Desktop Recommended</h2>
+        <p>This app is designed for desktop use. For the best experience, please use a larger screen.</p>
+        <button class="btn-primary" onclick="dismissMobileWarning()">Continue Anyway</button>
+      </div>
+    </div>
+    <script>
+      // Check if user already dismissed the warning
+      if (localStorage.getItem('spotidrome-mobile-dismissed')) {
+        document.getElementById('mobile-warning').style.display = 'none';
+      }
+      function dismissMobileWarning() {
+        document.getElementById('mobile-warning').style.display = 'none';
+        localStorage.setItem('spotidrome-mobile-dismissed', 'true');
+      }
+    </script>
+
     <div class="container">
         <header>
             <h1>Spotidrome</h1>

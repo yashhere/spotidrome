@@ -6,15 +6,34 @@
             <h3>Edit Track</h3>
             <button class="btn-close" onclick="document.getElementById('lyrics-editor-modal').remove()">×</button>
         </div>
+<!-- Toast notification (fixed position) -->
+<div class="toast-container" id="edit-toast" style="display: none;"></div>
+
         <div class="modal-body">
-            <p class="subtitle">{{ filename }}</p>
+<!-- Header: Art + Title/Artist -->
+<div class="track-header">
+  <div class="art-preview" id="art-preview">
+    {% if has_art %}
+    <img src="/api/tracks/art?file_path={{ file_path | urlencode }}" alt="Album Art" id="art-image">
+    {% else %}
+    <div class="art-placeholder">No Art</div>
+    {% endif %}
+    <label class="art-overlay">
+      <span>📷</span>
+      <input type="file" accept="image/*" id="art-upload" style="display: none;" onchange="uploadAlbumArt(this)">
+    </label>
+  </div>
+  <div class="track-info">
+    <p class="track-filename">{{ filename }}</p>
+  </div>
+</div>
+
 <!-- Unified Form -->
 <form hx-post="/api/tracks/update"
                   hx-swap="none"
-                  hx-on:htmx:after-request="if(event.detail.successful) { document.getElementById('lyrics-editor-modal').remove(); alert('Track updated!'); } else { alert('Failed to update track'); }"
+                  hx-on:htmx:after-request="handleFormResponse(event)"
                   class="metadata-form">
                 <input type="hidden" name="file_path" value="{{ file_path }}">
-<h4 style="margin-bottom: 0.75rem; font-size: 0.9rem; color: var(--text-secondary);">Metadata</h4>
 
 <div class="form-row">
   <div class="form-group">
@@ -32,25 +51,28 @@
     <label>Album</label>
     <input type="text" name="album" value="{{ metadata.album }}" class="form-control">
   </div>
-</div>
+  <div class="form-group" style="flex: 0 0 80px;">
+    <label>Year</label>
+    <input type="text" name="date" value="{{ metadata.date }}" class="form-control">
+    </div>
+  <div class="form-group" style="flex: 0 0 70px;">
+    <label>Track</label>
+    <input type="text" name="track_number" value="{{ metadata.track_number }}" class="form-control">
+  </div>
+  </div>
 
-<div class="form-row">
-                    <div class="form-group">
-                        <label>Year</label>
-                        <input type="text" name="date" value="{{ metadata.date }}" class="form-control" style="width: 80px">
-                        </div>
-                    <div class="form-group">
-                      <label>Track #</label>
-                      <input type="text" name="track_number" value="{{ metadata.track_number }}" class="form-control" style="width: 80px">
-                    </div>
-                    </div>
-                    
                     <hr style="margin: 1.5rem 0; border: 0; border-top: 1px solid var(--border);">
-                    
-                    <h4 style="margin-bottom: 0.75rem; font-size: 0.9rem; color: var(--text-secondary);">Lyrics</h4>
-                    
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                      <h4 style="font-size: 0.9rem; color: var(--text-secondary); margin: 0;">Lyrics</h4>
+                      <label class="upload-link">
+                        <span>↑ Upload .lrc</span>
+                        <input type="file" accept=".lrc,.txt" id="lrc-upload" style="display: none;" onchange="loadLrcFile(this)">
+                      </label>
+                    </div>
+
                     <div class="form-group">
-                      <textarea name="lyrics" rows="12" class="lyrics-input"
+                      <textarea name="lyrics" id="lyrics-textarea" rows="12" class="lyrics-input"
                         placeholder="Paste lyrics here (LRC format supported)...">{{ lyrics }}</textarea>
                     </div>
 
@@ -62,3 +84,76 @@
         </div>
     </div>
 </div>
+
+<script>
+  function loadLrcFile(input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function (e) {
+      document.getElementById('lyrics-textarea').value = e.target.result;
+      showToast('Loaded: ' + file.name, 'success');
+    };
+    reader.onerror = function () {
+      showToast('Failed to read file', 'error');
+    };
+    reader.readAsText(file);
+  }
+
+  function showToast(message, type = 'success') {
+    const toast = document.getElementById('edit-toast');
+    toast.textContent = message;
+    toast.className = 'toast-container toast-' + type;
+    toast.style.display = 'block';
+
+    // Auto-hide after 3 seconds
+    setTimeout(() => {
+      toast.style.display = 'none';
+    }, 3000);
+  }
+
+  function handleFormResponse(event) {
+    if (event.detail.successful) {
+      showToast('Track updated successfully!', 'success');
+      // Close modal after a brief delay to show the toast
+      setTimeout(() => {
+        document.getElementById('lyrics-editor-modal').remove();
+      }, 1000);
+    } else {
+      showToast('Failed to update track', 'error');
+    }
+  }
+
+  async function uploadAlbumArt(input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file_path', '{{ file_path }}');
+    formData.append('art', file);
+
+    try {
+      const response = await fetch('/api/tracks/art', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (response.ok) {
+        showToast('Album art updated!', 'success');
+        // Update preview
+        const preview = document.getElementById('art-preview');
+        const img = document.getElementById('art-image');
+        if (img) {
+          img.src = '/api/tracks/art?file_path={{ file_path | urlencode }}&t=' + Date.now();
+        } else {
+          preview.innerHTML = '<img src="/api/tracks/art?file_path={{ file_path | urlencode }}&t=' + Date.now() + '" alt="Album Art" id="art-image">';
+        }
+      } else {
+        showToast('Failed to update album art', 'error');
+      }
+    } catch (e) {
+      showToast('Failed to upload', 'error');
+    }
+  }
+</script>

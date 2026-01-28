@@ -6,8 +6,8 @@ import logging
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, Request, Form, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, Request, Form, HTTPException, UploadFile, File
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -148,6 +148,27 @@ async def get_library(request: Request):
     })
 
 
+@app.get("/api/tracks/art")
+async def get_album_art(file_path: str):
+    """Get album art from an MP3 file."""
+    track_path = Path(file_path)
+    if not track_path.is_absolute():
+        track_path = MUSIC_DIR / track_path
+
+    if not track_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    try:
+        from mutagen.id3 import ID3
+        audio = ID3(track_path)
+        apic = audio.getall('APIC')
+        if apic:
+            return Response(content=apic[0].data, media_type=apic[0].mime)
+    except Exception:
+        pass
+
+    raise HTTPException(status_code=404, detail="No album art found")
+
 
 @app.get("/api/tracks/edit", response_class=HTMLResponse)
 async def get_lyrics_editor(request: Request, file_path: str):
@@ -201,12 +222,23 @@ async def get_lyrics_editor(request: Request, file_path: str):
         except Exception:
             pass
 
+    # Check for album art
+    has_art = False
+    try:
+        from mutagen.id3 import ID3
+        audio = ID3(track_path)
+        if audio.getall('APIC'):
+            has_art = True
+    except Exception:
+        pass
+
     return templates.TemplateResponse("partials/lyrics_edit.html", {
         "request": request,
         "file_path": file_path,
         "lyrics": lyrics,
         "metadata": metadata,
-        "filename": track_path.name
+        "filename": track_path.name,
+        "has_art": has_art
     })
 
 
@@ -218,9 +250,10 @@ async def update_track(
     album: str = Form(None),
     date: str = Form(None),
     track_number: str = Form(None),
-    lyrics: str = Form(None)
+    lyrics: str = Form("")
 ):
     """Update track metadata and lyrics."""
+    logger.info(f"update_track called - lyrics is None: {lyrics is None}, lyrics repr: {repr(lyrics)[:100] if lyrics else 'None'}")
     from .lyrics import update_metadata_in_file, embed_lyrics_in_file
 
     # Validate file path
@@ -250,22 +283,39 @@ async def update_track(
     # Update lyrics if provided
     if lyrics is not None:
         lyrics_text = lyrics.strip()
-        is_synced = lyrics_text.startswith("[") and "]" in lyrics_text.split("\n")[0]
-
-        # Save .lrc file
         lrc_path = track_path.with_suffix('.lrc')
-        lrc_path.write_text(lyrics_text, encoding='utf-8')
+        logger.info(f"Lyrics update - raw len: {len(lyrics)}, stripped len: {len(lyrics_text)}, empty: {not lyrics_text}")
 
-        # Embed lyrics
-        plain_lyrics = lyrics_text
-        synced_lyrics = lyrics_text if is_synced else None
+        if not lyrics_text:
+            # Empty lyrics - remove .lrc file and embedded lyrics
+            if lrc_path.exists():
+                lrc_path.unlink()
+            # Remove embedded lyrics
+            try:
+                from mutagen.id3 import ID3
+                audio = ID3(track_path)
+                audio.delall('USLT')
+                audio.delall('SYLT')
+                audio.save()
+            except Exception:
+                pass
+        else:
+            # Non-empty lyrics - save and embed
+            is_synced = lyrics_text.startswith("[") and "]" in lyrics_text.split("\n")[0]
 
-        if is_synced:
-            import re
-            plain_lyrics = re.sub(r'\[\d{2}:\d{2}[.\d]*\]', '', lyrics_text)
-            plain_lyrics = '\n'.join(line.strip() for line in plain_lyrics.split('\n') if line.strip())
+            # Save .lrc file
+            lrc_path.write_text(lyrics_text, encoding='utf-8')
 
-        embed_lyrics_in_file(track_path, plain_lyrics, synced_lyrics)
+            # Embed lyrics
+            plain_lyrics = lyrics_text
+            synced_lyrics = lyrics_text if is_synced else None
+
+            if is_synced:
+                import re
+                plain_lyrics = re.sub(r'\[\d{2}:\d{2}[.\d]*\]', '', lyrics_text)
+                plain_lyrics = '\n'.join(line.strip() for line in plain_lyrics.split('\n') if line.strip())
+
+            embed_lyrics_in_file(track_path, plain_lyrics, synced_lyrics)
 
     return {"status": "ok", "message": "Track updated"}
 
@@ -355,6 +405,56 @@ async def update_lyrics(
 
     return {"status": "ok", "message": "Lyrics updated"}
 
+
+@app.post("/api/tracks/art")
+async def update_album_art(
+    file_path: str = Form(...),
+    art: UploadFile = File(...)
+):
+    """Update album art for a track."""
+    track_path = Path(file_path)
+    if not track_path.is_absolute():
+        track_path = MUSIC_DIR / track_path
+
+    if not track_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Read uploaded image
+    art_data = await art.read()
+    if not art_data:
+        raise HTTPException(status_code=400, detail="No image data")
+
+    # Determine mime type
+    mime_type = art.content_type or "image/jpeg"
+
+    try:
+        from mutagen.id3 import ID3, APIC
+        from mutagen.id3._util import ID3NoHeaderError
+
+        try:
+            audio = ID3(track_path)
+        except ID3NoHeaderError:
+            audio = ID3()
+            audio.save(track_path)
+            audio = ID3(track_path)
+
+        # Remove existing album art
+        audio.delall('APIC')
+
+        # Add new album art
+        audio.add(APIC(
+            encoding=3,
+            mime=mime_type,
+            type=3,  # Cover (front)
+            desc='Cover',
+            data=art_data
+        ))
+        audio.save()
+        logger.info(f"Updated album art for: {track_path}")
+        return {"status": "ok", "message": "Album art updated"}
+    except Exception as e:
+        logger.error(f"Failed to update album art: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update album art")
 
 @app.get("/health")
 async def health():

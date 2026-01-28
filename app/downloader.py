@@ -49,6 +49,43 @@ class TrackDownloader:
         if self.progress_callback:
             self.progress_callback(status, current, total)
 
+    def _check_missing_metadata(self, file_path: Path) -> dict:
+        """Check what metadata is missing from an existing file.
+
+        Returns:
+            Dict with keys: album_art, lyrics, lrc_file - True if missing
+        """
+        missing = {"album_art": False, "lyrics": False, "lrc_file": False}
+
+        try:
+            from mutagen.id3 import ID3
+            from mutagen.id3._util import ID3NoHeaderError
+
+            try:
+                audio = ID3(file_path)
+            except ID3NoHeaderError:
+                # No ID3 header means everything is missing
+                return {"album_art": True, "lyrics": True, "lrc_file": True}
+
+            # Check for album art (APIC frame)
+            if not audio.getall('APIC'):
+                missing["album_art"] = True
+
+            # Check for embedded lyrics (USLT frame)
+            if not audio.getall('USLT'):
+                missing["lyrics"] = True
+
+            # Check for .lrc file
+            lrc_path = file_path.with_suffix('.lrc')
+            if not lrc_path.exists():
+                missing["lrc_file"] = True
+
+        except Exception as e:
+            logger.warning(f"Failed to check metadata: {e}")
+            # If we can't read, assume nothing is missing to avoid breaking things
+
+        return missing
+
     def download_track(self, track: Track) -> Path | None:
         """Download a single track.
 
@@ -70,10 +107,29 @@ class TrackDownloader:
 
         output_path = artist_dir / f"{safe_title}.mp3"
 
-        # Skip if already downloaded
+        # Check if file already exists
         if output_path.exists():
-            logger.info(f"Already exists: {safe_artist}/{safe_title}.mp3")
-            self._report_progress(f"Already exists: {safe_artist}/{safe_title}.mp3")
+            # Check for missing metadata and update if needed
+            missing = self._check_missing_metadata(output_path)
+
+            if any(missing.values()):
+                missing_items = [k for k, v in missing.items() if v]
+                logger.info(f"Updating metadata ({', '.join(missing_items)}): {safe_artist}/{safe_title}.mp3")
+                self._report_progress(f"Updating metadata: {safe_artist}/{safe_title}.mp3")
+
+                # Update album art if missing (via _tag_file which handles album art)
+                if missing.get("album_art"):
+                    self._tag_file(output_path, track)
+
+                # Update lyrics if missing (embedded or .lrc)
+                if missing.get("lyrics") or missing.get("lrc_file"):
+                    self._fetch_lyrics(output_path, track)
+
+                logger.info(f"Updated metadata for: {safe_artist}/{safe_title}.mp3")
+            else:
+                logger.info(f"Already exists (complete): {safe_artist}/{safe_title}.mp3")
+                self._report_progress(f"Already exists: {safe_artist}/{safe_title}.mp3")
+
             return output_path
 
         # Build search query or use source URL
@@ -100,7 +156,7 @@ class TrackDownloader:
         ]
 
         try:
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
             logger.debug(f"yt-dlp completed for: {artist} - {track_name}")
         except subprocess.CalledProcessError as e:
             error_msg = e.stderr[:200] if e.stderr else str(e)
