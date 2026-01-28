@@ -158,6 +158,66 @@ class LyricsProvider:
         return None, None
 
 
+
+
+
+def _parse_lrc_timestamp(timestamp: str) -> int:
+    """Convert [mm:ss.xx] timestamp to milliseconds."""
+    try:
+        minutes, seconds = timestamp.strip('[]').split(':')
+        if '.' in seconds:
+            secs, ms = seconds.split('.')
+            if len(ms) == 2:
+                ms += '0'  # 12.34 -> 12.340
+        else:
+            secs = seconds
+            ms = '0'
+
+        total_ms = (int(minutes) * 60 * 1000) + (int(secs) * 1000) + int(ms)
+        return total_ms
+    except Exception:
+        return 0
+
+
+def _parse_lrc(lrc_content: str) -> list[tuple[str, int]]:
+    """Parse LRC content into list of (text, timestamp_ms)."""
+    import re
+    result = []
+    # Regex to match timestamps like [00:12.34] or [00:12.345]
+    pattern = re.compile(r'\[(\d{2}):(\d{2})[.:](\d{2,3})\]')
+
+    for line in lrc_content.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        # Find all timestamps in the line (e.g. [00:12.00][00:15.00]Chorus)
+        matches = list(pattern.finditer(line))
+        if not matches:
+            continue
+
+        # The text is strictly after the last timestamp
+        text = line[matches[-1].end():].strip()
+
+        for match in matches:
+            minutes = int(match.group(1))
+            seconds = int(match.group(2))
+            ms_part = match.group(3)
+
+            # Normalize ms to milliseconds
+            if len(ms_part) == 2:
+                ms = int(ms_part) * 10
+            else:
+                ms = int(ms_part)
+
+            total_ms = (minutes * 60 * 1000) + (seconds * 1000) + ms
+            result.append((text, total_ms))
+
+    # Sort by timestamp
+    result.sort(key=lambda x: x[1])
+    return result
+
+
 def embed_lyrics_in_file(file_path, plain_lyrics: str | None, synced_lyrics: str | None = None) -> bool:
     """Embed lyrics into an MP3 file's ID3 tags.
 
@@ -172,7 +232,7 @@ def embed_lyrics_in_file(file_path, plain_lyrics: str | None, synced_lyrics: str
     from pathlib import Path
 
     try:
-        from mutagen.id3 import ID3, USLT, Encoding
+        from mutagen.id3 import ID3, USLT, SYLT, Encoding
         from mutagen.id3._util import ID3NoHeaderError
     except ImportError:
         logger.warning("mutagen not installed, cannot embed lyrics")
@@ -196,13 +256,26 @@ def embed_lyrics_in_file(file_path, plain_lyrics: str | None, synced_lyrics: str
         if plain_lyrics:
             audio.add(USLT(
                 encoding=Encoding.UTF8,
-                lang='xxx',
+                lang='eng', # Use 'eng' instead of 'xxx' for better compatibility
                 desc='',
                 text=plain_lyrics
             ))
 
+        # Add synced lyrics
+        if synced_lyrics:
+            parsed_lyrics = _parse_lrc(synced_lyrics)
+            if parsed_lyrics:
+                audio.add(SYLT(
+                    encoding=Encoding.UTF8,
+                    lang='eng',
+                    format=2, # 2 = ms absolute timestamp
+                    type=1, # 1 = Lyrics
+                    desc='',
+                    text=parsed_lyrics
+                ))
+
         audio.save()
-        logger.info(f"Embedded lyrics in: {file_path}")
+        logger.info(f"Embedded lyrics (synced={bool(synced_lyrics)}) in: {file_path}")
         return True
 
     except Exception as e:
