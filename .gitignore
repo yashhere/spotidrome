@@ -8,6 +8,7 @@ __pycache__/
 venv/
 ENV/
 env/
+.ruff_cache/
 
 # IDE
 .idea/

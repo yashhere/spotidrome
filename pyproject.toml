@@ -1,7 +1,10 @@
 [project]
 name = "spotidrome"
 version = "0.1.0"
-description = "Add your description here"
+description = "Spotidrome - A web application for downloading Spotify playlists and albums"
+authors = [
+    { name = "Yash Agarwal", email = "13733968+yashhere@users.noreply.github.com" }
+]
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
