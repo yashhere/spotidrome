@@ -1,6 +1,6 @@
 [project]
 name = "spotidrome"
-version = "0.1.0"
+version = "1.0.0"
 description = "Spotidrome - A web application for downloading Spotify playlists and albums"
 authors = [
     { name = "Yash Agarwal", email = "13733968+yashhere@users.noreply.github.com" }
