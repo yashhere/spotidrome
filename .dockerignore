@@ -1,0 +1,32 @@
+# Virtual environment - must exclude to use container-built venv
+.venv/
+venv/
+
+# Git
+.git/
+.gitignore
+
+# Data directories
+data/
+test_music/
+
+# IDE
+.idea/
+.vscode/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# Docs
+README.md
