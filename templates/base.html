@@ -11,7 +11,13 @@
     <!-- Mobile Warning Overlay -->
     <div class="mobile-warning" id="mobile-warning">
       <div class="mobile-warning-content">
-        <div class="mobile-warning-icon">📱</div>
+        <div class="mobile-warning-icon">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+            <line x1="12" y1="18" x2="12.01" y2="18"></line>
+          </svg>
+        </div>
         <h2>Desktop Recommended</h2>
         <p>This app is designed for desktop use. For the best experience, please use a larger screen.</p>
         <button class="btn-primary" onclick="dismissMobileWarning()">Continue Anyway</button>
@@ -20,10 +26,10 @@
     <script>
       // Check if user already dismissed the warning
       if (localStorage.getItem('spotidrome-mobile-dismissed')) {
-        document.getElementById('mobile-warning').style.display = 'none';
+        document.getElementById('mobile-warning').style.setProperty('display', 'none', 'important');
       }
       function dismissMobileWarning() {
-        document.getElementById('mobile-warning').style.display = 'none';
+        document.getElementById('mobile-warning').style.setProperty('display', 'none', 'important');
         localStorage.setItem('spotidrome-mobile-dismissed', 'true');
       }
     </script>
