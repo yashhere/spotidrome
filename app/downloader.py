@@ -188,7 +188,6 @@ class TrackDownloader:
                 "--no-playlist",
                 "--no-warnings",
                 "--quiet",
-                "--no-cookies-update",  # Prevent writing to read-only cookie file
             ]
         )
 

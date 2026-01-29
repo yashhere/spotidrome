@@ -165,7 +165,6 @@ class YouTubeProvider:
             *self._get_cookie_args(),
             "--dump-json",
             "--no-download",
-            "--no-cookies-update",
             url,
         ]
 
@@ -209,7 +208,6 @@ class YouTubeProvider:
             "--dump-json",
             "--flat-playlist",
             "--no-download",
-            "--no-cookies-update",  # Prevent writing to read-only cookie file
             url,
         ]
 
