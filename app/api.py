@@ -2,23 +2,35 @@
 FastAPI application for Spotidrome.
 """
 
-import logging
-import os
-import re
-from pathlib import Path
+# Load .env file before other imports to ensure environment variables are available
+from dotenv import load_dotenv
 
-import httpx
-import uvicorn
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, Response
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from mutagen.easyid3 import EasyID3
-from mutagen.id3 import APIC, ID3
-from mutagen.id3._util import ID3NoHeaderError
+load_dotenv()
 
-from .lyrics import embed_lyrics_in_file, update_metadata_in_file
-from .worker import JobWorker
+import logging  # noqa: E402
+import os  # noqa: E402
+import re  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+import httpx  # noqa: E402
+import uvicorn  # noqa: E402
+from fastapi import (  # noqa: E402
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+)
+from fastapi.responses import FileResponse, HTMLResponse, Response  # noqa: E402
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+from fastapi.templating import Jinja2Templates  # noqa: E402
+from mutagen.easyid3 import EasyID3  # noqa: E402
+from mutagen.id3 import APIC, ID3  # noqa: E402
+from mutagen.id3._util import ID3NoHeaderError  # noqa: E402
+
+from .lyrics import embed_lyrics_in_file, update_metadata_in_file  # noqa: E402
+from .worker import JobWorker  # noqa: E402
 
 # Configure logging
 log_level = os.getenv("LOG_LEVEL", "INFO").upper()

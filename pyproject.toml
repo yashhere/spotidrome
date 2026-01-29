@@ -18,6 +18,7 @@ dependencies = [
     "uvicorn[standard]>=0.40.0",
     "yt-dlp[default]>=2025.12.8",
     "langdetect>=1.0.9",
+    "python-dotenv>=1.2.1",
 ]
 
 [tool.isort]
