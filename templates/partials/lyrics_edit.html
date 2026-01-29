@@ -288,42 +288,52 @@
 
           async function pasteFromClipboard() {
             try {
-              const clipboardItems = await navigator.clipboard.read();
+      // Check if clipboard API is available
+      if (!navigator.clipboard || !navigator.clipboard.read) {
+        showToast("Clipboard API not supported. Try using URL or file upload instead.", "error");
+        return;
+      }
 
-              for (const item of clipboardItems) {
-                const imageTypes = item.types.filter(type => type.startsWith('image/'));
+      const clipboardItems = await navigator.clipboard.read();
 
-                if (imageTypes.length === 0) {
-                  showToast("No image found in clipboard", "error");
-                  return;
-                }
+      for (const item of clipboardItems) {
+        const imageTypes = item.types.filter(type => type.startsWith('image/'));
 
-                const blob = await item.getType(imageTypes[0]);
+        if (imageTypes.length === 0) {
+          showToast("No image found in clipboard", "error");
+          return;
+        }
 
-                showToast("Uploading image from clipboard...", "success");
+        const blob = await item.getType(imageTypes[0]);
 
-                const formData = new FormData();
-                formData.append("file_path", "{{ file_path }}");
-                formData.append("art", blob, "clipboard.png");
+        showToast("Uploading image from clipboard...", "success");
 
-                const response = await fetch("/api/tracks/art", {
-                  method: "POST",
-                  body: formData,
-                });
+        const formData = new FormData();
+        formData.append("file_path", "{{ file_path }}");
+        formData.append("art", blob, "clipboard.png");
 
-                if (response.ok) {
-                  showToast("Album art updated from clipboard!", "success");
-                  updateArtPreview();
-                } else {
-                  showToast("Failed to update album art", "error");
-                }
-                return;
-              }
-            } catch (e) {
-              showToast("Failed to read clipboard. Make sure you've copied an image.", "error");
-            }
+        const response = await fetch("/api/tracks/art", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (response.ok) {
+          showToast("Album art updated from clipboard!", "success");
+          updateArtPreview();
+        } else {
+          showToast("Failed to update album art", "error");
+        }
+        return;
+      }
+    } catch (e) {
+      console.error("Clipboard error:", e);
+      if (e.name === 'NotAllowedError') {
+        showToast("Clipboard access denied. Please allow clipboard permissions or use URL/file upload.", "error");
+      } else {
+        showToast("Failed to read clipboard: " + e.message, "error");
+      }
+    }
           }
-
           function updateArtPreview() {
             const preview = document.getElementById("art-preview");
             const img = document.getElementById("art-image");
