@@ -17,6 +17,7 @@ dependencies = [
     "spotipy>=2.25.2",
     "uvicorn[standard]>=0.40.0",
     "yt-dlp[default]>=2025.12.8",
+    "langdetect>=1.0.9",
 ]
 
 [tool.isort]

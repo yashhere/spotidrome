@@ -187,6 +187,80 @@ async def get_library(request: Request, q: str | None = None):
     )
 
 
+def get_all_genres():
+    """Get list of all unique genres in the library."""
+    genres = set()
+    if MUSIC_DIR.exists():
+        for mp3_file in MUSIC_DIR.rglob("*.mp3"):
+            try:
+                audio = EasyID3(mp3_file)
+                genre_list = audio.get("genre", [])
+                for g in genre_list:
+                    if g.strip():
+                        genres.add(g.strip())
+            except Exception:
+                pass
+
+    if not genres:
+        # Return common defaults if library has no genre metadata
+        return [
+            "Alternative",
+            "Anime",
+            "Blues",
+            "Children's Music",
+            "Classical",
+            "Comedy",
+            "Country",
+            "Dance",
+            "Disney",
+            "Easy Listening",
+            "Electronic",
+            "Enka",
+            "French Pop",
+            "German Folk",
+            "German Pop",
+            "Fitness & Workout",
+            "Hip-Hop/Rap",
+            "Holiday",
+            "Indie Pop",
+            "Industrial",
+            "Inspirational - Christian & Gospel",
+            "Instrumental",
+            "J-Pop",
+            "Jazz",
+            "K-Pop",
+            "Karaoke",
+            "Kayokyoku",
+            "Latin",
+            "New Age",
+            "Opera",
+            "Pop",
+            "R&B/Soul",
+            "Reggae",
+            "Rock",
+            "Singer/Songwriter",
+            "Soundtrack",
+            "Spoken Word",
+            "Vocal",
+            "World",
+        ]
+
+    return sorted(list(genres))
+
+
+@app.get("/api/genres")
+async def get_genres(request: Request):
+    """Get list of all unique genres in the library."""
+    sorted_genres = get_all_genres()
+
+    # Return HTML options for HTMX
+    if request.headers.get("HX-Request"):
+        options = "".join([f'<option value="{g}">' for g in sorted_genres])
+        return HTMLResponse(content=options)
+
+    return sorted_genres
+
+
 @app.get("/api/tracks/art")
 async def get_album_art(file_path: str):
     """Get album art from an MP3 file."""
@@ -219,7 +293,14 @@ async def get_lyrics_editor(request: Request, file_path: str):
         raise HTTPException(status_code=404, detail="File not found")
 
     # Fetch existing metadata
-    metadata = {"title": "", "artist": "", "album": "", "date": "", "track_number": ""}
+    metadata = {
+        "title": "",
+        "artist": "",
+        "album": "",
+        "date": "",
+        "track_number": "",
+        "genre": "",
+    }
 
     try:
         audio = EasyID3(track_path)
@@ -228,6 +309,7 @@ async def get_lyrics_editor(request: Request, file_path: str):
         metadata["album"] = audio.get("album", [""])[0]
         metadata["date"] = audio.get("date", [""])[0]
         metadata["track_number"] = audio.get("tracknumber", [""])[0]
+        metadata["genre"] = audio.get("genre", [""])[0]
     except Exception:
         pass
 
@@ -261,6 +343,9 @@ async def get_lyrics_editor(request: Request, file_path: str):
     except Exception:
         pass
 
+    # Get all available genres
+    all_genres = get_all_genres()
+
     return templates.TemplateResponse(
         "partials/lyrics_edit.html",
         {
@@ -270,6 +355,7 @@ async def get_lyrics_editor(request: Request, file_path: str):
             "metadata": metadata,
             "filename": track_path.name,
             "has_art": has_art,
+            "all_genres": all_genres,
         },
     )
 
@@ -282,12 +368,10 @@ async def update_track(
     album: str = Form(None),
     date: str = Form(None),
     track_number: str = Form(None),
+    genre: str = Form(None),
     lyrics: str = Form(""),
 ):
     """Update track metadata and lyrics."""
-    logger.info(
-        f"update_track called - lyrics is None: {lyrics is None}, lyrics repr: {repr(lyrics)[:100] if lyrics else 'None'}"
-    )
 
     # Validate file path
     track_path = Path(file_path)
@@ -321,6 +405,7 @@ async def update_track(
             "album": album,
             "date": date,
             "track_number": track_number,
+            "genre": genre,
         },
     )
 
@@ -373,9 +458,6 @@ async def update_track(
     if lyrics is not None:
         lyrics_text = lyrics.strip()
         lrc_path = track_path.with_suffix(".lrc")
-        logger.info(
-            f"Lyrics update - raw len: {len(lyrics)}, stripped len: {len(lyrics_text)}, empty: {not lyrics_text}"
-        )
 
         if not lyrics_text:
             # Empty lyrics - remove .lrc file and embedded lyrics

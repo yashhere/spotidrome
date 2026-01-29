@@ -251,6 +251,9 @@ class TrackDownloader:
                 year = track["release_date"].split("-")[0]
                 audio["date"] = year
 
+            if track.get("genre"):
+                audio["genre"] = track["genre"]
+
             audio.save()
             logger.debug(f"Tagged: {artist} - {title}")
 

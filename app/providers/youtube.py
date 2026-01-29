@@ -165,6 +165,7 @@ class YouTubeProvider:
             *self._get_cookie_args(),
             "--dump-json",
             "--no-download",
+            "--no-playlist",
             url,
         ]
 

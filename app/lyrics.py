@@ -9,6 +9,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from langdetect import LangDetectException, detect
 from mutagen.easyid3 import EasyID3
 from mutagen.id3 import ID3, SYLT, USLT, Encoding
 from mutagen.id3._util import ID3NoHeaderError
@@ -16,14 +17,31 @@ from mutagen.id3._util import ID3NoHeaderError
 logger = logging.getLogger(__name__)
 
 
+def detect_language(text: str) -> str | None:
+    """Detect language of text using langdetect library.
+
+    Returns ISO 639-1 language code or None if detection fails.
+    """
+    if not text or len(text.strip()) < 20:
+        return None
+    try:
+        return detect(text)
+    except LangDetectException:
+        return None
+
+
 class LyricsProvider:
     """Fetches lyrics from multiple sources."""
 
-    def __init__(self):
+    # ISO 639-1 language codes for filtering
+    ALLOWED_LANGUAGES = {"en", "hi"}  # English and Hindi only
+
+    def __init__(self, allowed_languages: set[str] | None = None):
         self.user_agent = (
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
         )
         self.mxm_token = None
+        self.allowed_languages = allowed_languages or self.ALLOWED_LANGUAGES
 
     def get_lyrics(self, title: str, artist: str) -> tuple[str | None, str | None]:
         """
@@ -35,26 +53,50 @@ class LyricsProvider:
         # Try Musixmatch first (best coverage, has synced lyrics)
         synced, plain = self._fetch_musixmatch(title, artist)
         if synced or plain:
-            logger.debug(
-                f"Found lyrics via Musixmatch (synced={bool(synced)}, plain={bool(plain)})"
-            )
-            return plain, synced
+            if self._is_allowed_language(plain or synced):
+                logger.debug(
+                    f"Found lyrics via Musixmatch (synced={bool(synced)}, plain={bool(plain)})"
+                )
+                return plain, synced
 
         # Try LRCLIB (has synced lyrics)
         synced, plain = self._fetch_lrclib(title, artist)
         if synced or plain:
-            logger.debug(
-                f"Found lyrics via LRCLIB (synced={bool(synced)}, plain={bool(plain)})"
-            )
-            return plain, synced
+            if self._is_allowed_language(plain or synced):
+                logger.debug(
+                    f"Found lyrics via LRCLIB (synced={bool(synced)}, plain={bool(plain)})"
+                )
+                return plain, synced
 
         # Fallback to lyrics.ovh for plain lyrics
         plain = self._fetch_lyrics_ovh(title, artist)
         if plain:
-            logger.debug("Found plain lyrics via lyrics.ovh")
-        else:
-            logger.debug("No lyrics found from any source")
-        return plain, None
+            if self._is_allowed_language(plain):
+                logger.debug("Found plain lyrics via lyrics.ovh")
+                return plain, None
+
+        logger.debug("No lyrics found from any source (or filtered by language)")
+        return None, None
+
+    def _is_allowed_language(self, lyrics: str) -> bool:
+        """Check if lyrics are in an allowed language."""
+        # Strip LRC timestamps if present
+        clean_text = re.sub(r"\[\d{2}:\d{2}[.:]\d{2,3}\]", "", lyrics)
+        detected_lang = detect_language(clean_text)
+
+        if detected_lang:
+            if detected_lang in self.allowed_languages:
+                logger.debug(f"Lyrics language '{detected_lang}' is allowed")
+                return True
+            else:
+                logger.debug(
+                    f"Lyrics language '{detected_lang}' not in {self.allowed_languages}"
+                )
+                return False
+
+        # Could not detect language, allow it
+        logger.debug("Could not detect lyrics language, allowing")
+        return True
 
     def _fetch_lrclib(self, title: str, artist: str) -> tuple[str | None, str | None]:
         """Fetch from LRCLIB (free, has synced lyrics)."""
@@ -142,49 +184,61 @@ class LyricsProvider:
             if not track_list:
                 return None, None
 
-            track_id = track_list[0].get("track", {}).get("track_id")
-            if not track_id:
-                return None, None
+            # Get lyrics from first track with lyrics
+            for item in track_list:
+                track = item.get("track", {})
+                track_id = track.get("track_id")
+                if not track_id:
+                    continue
 
-            # Get synced lyrics
-            synced_lyrics = None
-            try:
-                subtitle_url = f"https://apic-desktop.musixmatch.com/ws/1.1/track.subtitle.get?track_id={track_id}&subtitle_format=lrc&app_id=web-desktop-app-v1.0&usertoken={token}"
-                req = urllib.request.Request(
-                    subtitle_url, headers={"User-Agent": self.user_agent}
-                )
-                with urllib.request.urlopen(req, timeout=10) as response:
-                    subtitle_data = json.loads(response.read())
-                    subtitle_body = (
-                        subtitle_data.get("message", {})
-                        .get("body", {})
-                        .get("subtitle", {})
-                    )
-                    synced_lyrics = subtitle_body.get("subtitle_body")
-            except Exception:
-                pass
+                synced_lyrics, plain_lyrics = self._fetch_mxm_lyrics(track_id, token)
+                if synced_lyrics or plain_lyrics:
+                    return synced_lyrics, plain_lyrics
 
-            # Get plain lyrics
-            plain_lyrics = None
-            try:
-                lyrics_url = f"https://apic-desktop.musixmatch.com/ws/1.1/track.lyrics.get?track_id={track_id}&app_id=web-desktop-app-v1.0&usertoken={token}"
-                req = urllib.request.Request(
-                    lyrics_url, headers={"User-Agent": self.user_agent}
-                )
-                with urllib.request.urlopen(req, timeout=10) as response:
-                    lyrics_data = json.loads(response.read())
-                    lyrics_body = (
-                        lyrics_data.get("message", {}).get("body", {}).get("lyrics", {})
-                    )
-                    plain_lyrics = lyrics_body.get("lyrics_body")
-            except Exception:
-                pass
-
-            return synced_lyrics, plain_lyrics
+            return None, None
 
         except Exception as e:
             logger.debug(f"Musixmatch failed: {e}")
         return None, None
+
+    def _fetch_mxm_lyrics(
+        self, track_id: int, token: str
+    ) -> tuple[str | None, str | None]:
+        """Fetch synced and plain lyrics for a Musixmatch track ID."""
+        synced_lyrics = None
+        plain_lyrics = None
+
+        # Get synced lyrics
+        try:
+            subtitle_url = f"https://apic-desktop.musixmatch.com/ws/1.1/track.subtitle.get?track_id={track_id}&subtitle_format=lrc&app_id=web-desktop-app-v1.0&usertoken={token}"
+            req = urllib.request.Request(
+                subtitle_url, headers={"User-Agent": self.user_agent}
+            )
+            with urllib.request.urlopen(req, timeout=10) as response:
+                subtitle_data = json.loads(response.read())
+                subtitle_body = (
+                    subtitle_data.get("message", {}).get("body", {}).get("subtitle", {})
+                )
+                synced_lyrics = subtitle_body.get("subtitle_body")
+        except Exception:
+            pass
+
+        # Get plain lyrics
+        try:
+            lyrics_url = f"https://apic-desktop.musixmatch.com/ws/1.1/track.lyrics.get?track_id={track_id}&app_id=web-desktop-app-v1.0&usertoken={token}"
+            req = urllib.request.Request(
+                lyrics_url, headers={"User-Agent": self.user_agent}
+            )
+            with urllib.request.urlopen(req, timeout=10) as response:
+                lyrics_data = json.loads(response.read())
+                lyrics_body = (
+                    lyrics_data.get("message", {}).get("body", {}).get("lyrics", {})
+                )
+                plain_lyrics = lyrics_body.get("lyrics_body")
+        except Exception:
+            pass
+
+        return synced_lyrics, plain_lyrics
 
 
 def _parse_lrc_timestamp(timestamp: str) -> int:
@@ -349,8 +403,10 @@ def update_metadata_in_file(file_path, metadata: dict) -> bool:
         if "track_number" in metadata and metadata["track_number"]:
             audio["tracknumber"] = str(metadata["track_number"])
 
+        if "genre" in metadata and metadata["genre"]:
+            audio["genre"] = metadata["genre"]
+
         audio.save()
-        logger.info(f"Updated metadata for: {file_path}")
         return True
 
     except Exception as e:

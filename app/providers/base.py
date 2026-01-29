@@ -16,6 +16,7 @@ class Track(TypedDict):
     release_date: str | None
     track_number: int | None
     artist_ids: list[str]  # For Spotify genre lookup
+    genre: str | None  # Genre from Spotify artist
     source_url: str | None  # Original URL (for YouTube direct download)
 
 

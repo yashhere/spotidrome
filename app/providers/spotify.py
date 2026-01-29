@@ -70,6 +70,30 @@ class SpotifyProvider:
         with urllib.request.urlopen(req) as response:
             return json.loads(response.read())
 
+    def _get_artist_genres(self, artist_ids: list[str]) -> str | None:
+        """Fetch genres from the first artist with genres.
+
+        Returns:
+            Comma-separated genre string, or None if no genres found
+        """
+        if not artist_ids:
+            return None
+
+        try:
+            # Batch request up to 50 artists at once
+            ids_param = ",".join(artist_ids[:50])
+            data = self._api_request(f"artists?ids={ids_param}")
+
+            for artist in data.get("artists", []):
+                if artist and artist.get("genres"):
+                    # Return first non-empty genre list, title-cased
+                    genres = [g.title() for g in artist["genres"][:3]]
+                    return ", ".join(genres)
+        except Exception:
+            pass
+
+        return None
+
     def _extract_id(self, url: str, type_: str) -> str | None:
         """Extract Spotify ID from URL."""
         # Handle both URLs and URIs
@@ -83,7 +107,9 @@ class SpotifyProvider:
                 return match.group(1)
         return None
 
-    def _parse_track(self, track_data: dict, album_data: dict | None = None) -> Track:
+    def _parse_track(
+        self, track_data: dict, album_data: dict | None = None, genre: str | None = None
+    ) -> Track:
         """Parse Spotify track data into common Track format."""
         if album_data is None:
             album_data = track_data.get("album", {})
@@ -102,6 +128,7 @@ class SpotifyProvider:
             release_date=album_data.get("release_date"),
             track_number=track_data.get("track_number"),
             artist_ids=artist_ids,
+            genre=genre,
             source_url=None,  # Will search YouTube
         )
 
@@ -113,9 +140,40 @@ class SpotifyProvider:
 
         try:
             data = self._api_request(f"tracks/{track_id}")
-            return self._parse_track(data)
+            artist_ids = [a["id"] for a in data.get("artists", []) if a.get("id")]
+            genre = self._get_artist_genres(artist_ids)
+            return self._parse_track(data, genre=genre)
         except Exception:
             return None
+
+    def _fetch_genres_for_artists(self, artist_ids: list[str]) -> dict[str, str]:
+        """Batch fetch genres for a list of artist IDs.
+
+        Returns:
+            Dict mapping artist_id to genre string
+        """
+        genres_map: dict[str, str] = {}
+        if not artist_ids:
+            return genres_map
+
+        # Deduplicate
+        unique_ids = list(dict.fromkeys(artist_ids))
+
+        # Batch in groups of 50 (Spotify API limit)
+        for i in range(0, len(unique_ids), 50):
+            batch = unique_ids[i : i + 50]
+            try:
+                ids_param = ",".join(batch)
+                data = self._api_request(f"artists?ids={ids_param}")
+
+                for artist in data.get("artists", []):
+                    if artist and artist.get("id") and artist.get("genres"):
+                        genres = [g.title() for g in artist["genres"][:3]]
+                        genres_map[artist["id"]] = ", ".join(genres)
+            except Exception:
+                pass
+
+        return genres_map
 
     def get_playlist(self, url: str) -> tuple[str, list[Track]]:
         """Fetch playlist from Spotify URL."""
@@ -128,13 +186,14 @@ class SpotifyProvider:
             raise ValueError(f"Could not extract playlist ID from URL: {url}")
 
         playlist = self._api_request(f"playlists/{playlist_id}")
-        tracks: list[Track] = []
 
+        # Collect all raw track data first
+        raw_tracks: list[dict] = []
         items = playlist.get("tracks", {}).get("items", [])
         for item in items:
             track = item.get("track")
             if track:
-                tracks.append(self._parse_track(track))
+                raw_tracks.append(track)
 
         # Handle pagination
         next_url = playlist.get("tracks", {}).get("next")
@@ -144,18 +203,51 @@ class SpotifyProvider:
             for item in data.get("items", []):
                 track = item.get("track")
                 if track:
-                    tracks.append(self._parse_track(track))
+                    raw_tracks.append(track)
             next_url = data.get("next")
+
+        # Batch fetch genres for all artists
+        all_artist_ids: list[str] = []
+        for track in raw_tracks:
+            for artist in track.get("artists", []):
+                if artist.get("id"):
+                    all_artist_ids.append(artist["id"])
+
+        genres_map = self._fetch_genres_for_artists(all_artist_ids)
+
+        # Parse tracks with genres
+        tracks: list[Track] = []
+        for track_data in raw_tracks:
+            # Get genre from primary artist
+            primary_artist_id = None
+            if track_data.get("artists") and track_data["artists"][0].get("id"):
+                primary_artist_id = track_data["artists"][0]["id"]
+            genre = genres_map.get(primary_artist_id) if primary_artist_id else None
+            tracks.append(self._parse_track(track_data, genre=genre))
 
         return playlist.get("name", "Spotify Playlist"), tracks
 
     def _get_album(self, album_id: str) -> tuple[str, list[Track]]:
         """Fetch album tracks."""
         album = self._api_request(f"albums/{album_id}")
-        tracks: list[Track] = []
 
-        for track in album.get("tracks", {}).get("items", []):
-            tracks.append(self._parse_track(track, album))
+        # Collect all artist IDs from album tracks
+        raw_tracks = album.get("tracks", {}).get("items", [])
+        all_artist_ids: list[str] = []
+        for track in raw_tracks:
+            for artist in track.get("artists", []):
+                if artist.get("id"):
+                    all_artist_ids.append(artist["id"])
+
+        genres_map = self._fetch_genres_for_artists(all_artist_ids)
+
+        tracks: list[Track] = []
+        for track_data in raw_tracks:
+            primary_artist_id = None
+            if track_data.get("artists") and track_data["artists"][0].get("id"):
+                primary_artist_id = track_data["artists"][0]["id"]
+            genre = genres_map.get(primary_artist_id) if primary_artist_id else None
+            tracks.append(self._parse_track(track_data, album, genre=genre))
 
         return album.get("name", "Spotify Album"), tracks
 
@@ -167,7 +259,12 @@ class SpotifyProvider:
 
             items = data.get("tracks", {}).get("items", [])
             if items:
-                return self._parse_track(items[0])
+                track_data = items[0]
+                artist_ids = [
+                    a["id"] for a in track_data.get("artists", []) if a.get("id")
+                ]
+                genre = self._get_artist_genres(artist_ids)
+                return self._parse_track(track_data, genre=genre)
         except Exception:
             pass
         return None
