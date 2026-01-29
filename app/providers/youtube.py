@@ -67,10 +67,24 @@ class YouTubeProvider:
 
         # Add cookies if configured
         if self.cookies:
-            if Path(self.cookies).exists():
-                opts["cookiefile"] = self.cookies
-                logger.debug(f"Using cookies file: {self.cookies}")
+            # Determine if this is a file path or browser name
+            # File paths contain slashes or end with .txt/.json
+            is_file_path = (
+                "/" in self.cookies
+                or "\\" in self.cookies
+                or self.cookies.endswith(".txt")
+                or self.cookies.endswith(".json")
+            )
+
+            if is_file_path:
+                cookie_path = Path(self.cookies)
+                if cookie_path.exists():
+                    opts["cookiefile"] = self.cookies
+                    logger.debug(f"Using cookies file: {self.cookies}")
+                else:
+                    logger.warning(f"Cookies file not found: {self.cookies}")
             else:
+                # Treat as browser name (chrome, firefox, safari, etc.)
                 opts["cookiesfrombrowser"] = (self.cookies,)
                 logger.debug(f"Using cookies from browser: {self.cookies}")
 
