@@ -232,7 +232,7 @@
     if (!file) return;
 
     const formData = new FormData();
-    formData.append("file_path", "{{ file_path }}");
+    formData.append("file_path", "{{ file_path | safe }}");
     formData.append("art", file);
 
     try {
@@ -265,8 +265,10 @@
               showToast("Downloading image...", "success");
 
               const formData = new FormData();
-              formData.append("file_path", "{{ file_path }}");
+              formData.append("file_path", "{{ file_path | safe }}");
               formData.append("art_url", url);
+
+              console.log("Uploading from URL:", url, "for file:", "{{ file_path | safe }}");
 
               const response = await fetch("/api/tracks/art", {
                 method: "POST",
@@ -309,7 +311,7 @@
         showToast("Uploading image from clipboard...", "success");
 
         const formData = new FormData();
-        formData.append("file_path", "{{ file_path }}");
+        formData.append("file_path", "{{ file_path | safe }}");
         formData.append("art", blob, "clipboard.png");
 
         const response = await fetch("/api/tracks/art", {
