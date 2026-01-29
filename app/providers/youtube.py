@@ -2,14 +2,21 @@
 YouTube provider - fetches playlists/tracks from YouTube/YouTube Music.
 """
 
-import json
+import logging
 import re
-import subprocess
 import unicodedata
 from pathlib import Path
+from typing import Any
+
+import yt_dlp
 
 from .base import Track
 from .spotify import SpotifyProvider
+
+logger = logging.getLogger(__name__)
+
+# Common user agent for requests
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 
 
 class YouTubeProvider:
@@ -45,14 +52,29 @@ class YouTubeProvider:
             domain in url for domain in ["youtube.com", "youtu.be", "music.youtube.com"]
         )
 
-    def _get_cookie_args(self) -> list[str]:
-        """Build cookie arguments for yt-dlp."""
-        if not self.cookies:
-            return []
+    def _build_yt_dlp_opts(self, playlist: bool = False) -> dict[str, Any]:
+        """Build yt-dlp options for extracting info."""
+        opts: dict[str, Any] = {
+            "quiet": True,
+            "no_warnings": True,
+            "extract_flat": playlist,
+            "skip_download": True,
+            "http_headers": {
+                "User-Agent": USER_AGENT,
+                "Referer": "https://www.youtube.com/",
+            },
+        }
 
-        if Path(self.cookies).exists():
-            return ["--cookies", self.cookies]
-        return ["--cookies-from-browser", self.cookies]
+        # Add cookies if configured
+        if self.cookies:
+            if Path(self.cookies).exists():
+                opts["cookiefile"] = self.cookies
+                logger.debug(f"Using cookies file: {self.cookies}")
+            else:
+                opts["cookiesfrombrowser"] = (self.cookies,)
+                logger.debug(f"Using cookies from browser: {self.cookies}")
+
+        return opts
 
     def _parse_video_title(self, title: str, uploader: str) -> tuple[str, str]:
         """Parse artist and title from video title.
@@ -159,107 +181,156 @@ class YouTubeProvider:
             return None
 
     def get_track(self, url: str) -> Track | None:
-        """Fetch single video info from YouTube URL."""
-        cmd = [
-            "yt-dlp",
-            *self._get_cookie_args(),
-            "--dump-json",
-            "--no-download",
-            "--no-playlist",
-            url,
-        ]
+        """Fetch single video info from YouTube URL using yt-dlp Python library."""
+        logger.info(f"Fetching track info from: {url}")
+
+        opts = self._build_yt_dlp_opts(playlist=False)
+        opts["noplaylist"] = True
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            data = json.loads(result.stdout)
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                logger.debug(f"Extracting info for URL: {url}")
+                data = ydl.extract_info(url, download=False)
 
-            title = data.get("title", "")
-            uploader = data.get("uploader") or data.get("channel", "Unknown")
-            artist, track_title = self._parse_video_title(title, uploader)
+                if not data:
+                    logger.error(f"No data returned from yt-dlp for URL: {url}")
+                    return None
 
-            # Try to get Spotify metadata
-            spotify_track = self._enrich_with_spotify(artist, track_title)
-            if spotify_track:
-                # Add source URL for direct download
-                spotify_track["source_url"] = url
-                return spotify_track
+                title = data.get("title", "")
+                uploader = data.get("uploader") or data.get("channel", "Unknown")
+                video_id = data.get("id", "unknown")
 
-            # Return YouTube-based track
-            return Track(
-                name=track_title,
-                artists=[artist],
-                album=None,
-                cover_url=data.get("thumbnail"),
-                duration_ms=int(data.get("duration", 0) * 1000)
-                if data.get("duration")
-                else None,
-                release_date=data.get("upload_date"),
-                track_number=None,
-                artist_ids=[],
-                source_url=url,
+                logger.info(f"Found video: '{title}' by {uploader} (ID: {video_id})")
+
+                artist, track_title = self._parse_video_title(title, uploader)
+                logger.debug(f"Parsed as: artist='{artist}', title='{track_title}'")
+
+                # Try to get Spotify metadata
+                spotify_track = self._enrich_with_spotify(artist, track_title)
+                if spotify_track:
+                    logger.info(
+                        f"Enriched with Spotify metadata for: {artist} - {track_title}"
+                    )
+                    # Add source URL for direct download
+                    spotify_track["source_url"] = url
+                    return spotify_track
+
+                logger.debug("No Spotify match found, using YouTube metadata")
+
+                # Return YouTube-based track
+                return Track(
+                    name=track_title,
+                    artists=[artist],
+                    album=None,
+                    cover_url=data.get("thumbnail"),
+                    duration_ms=int(data.get("duration", 0) * 1000)
+                    if data.get("duration")
+                    else None,
+                    release_date=data.get("upload_date"),
+                    track_number=None,
+                    artist_ids=[],
+                    source_url=url,
+                )
+
+        except yt_dlp.DownloadError as e:
+            logger.error(f"yt-dlp DownloadError fetching track info for {url}: {e}")
+            return None
+        except yt_dlp.ExtractorError as e:
+            logger.error(f"yt-dlp ExtractorError fetching track info for {url}: {e}")
+            return None
+        except Exception as e:
+            logger.error(
+                f"Unexpected error fetching track info for {url}: "
+                f"{type(e).__name__}: {e}"
             )
-        except Exception:
             return None
 
     def get_playlist(self, url: str) -> tuple[str, list[Track]]:
-        """Fetch playlist from YouTube URL."""
-        cmd = [
-            "yt-dlp",
-            *self._get_cookie_args(),
-            "--dump-json",
-            "--flat-playlist",
-            "--no-download",
-            url,
-        ]
+        """Fetch playlist from YouTube URL using yt-dlp Python library."""
+        logger.info(f"Fetching playlist info from: {url}")
+
+        opts = self._build_yt_dlp_opts(playlist=True)
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            entries = [
-                json.loads(line) for line in result.stdout.strip().split("\n") if line
-            ]
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                logger.debug(f"Extracting playlist info for URL: {url}")
+                data = ydl.extract_info(url, download=False)
 
-            if not entries:
-                return "YouTube Playlist", []
-
-            playlist_name = entries[0].get("playlist_title", "YouTube Playlist")
-            tracks: list[Track] = []
-
-            for entry in entries:
-                video_title = entry.get("title", "")
-                video_uploader = entry.get("uploader") or entry.get(
-                    "channel", "Unknown"
-                )
-                video_url = entry.get("url") or entry.get("webpage_url", "")
-
-                if not video_title:
-                    continue
-
-                artist, title = self._parse_video_title(video_title, video_uploader)
-
-                # Try Spotify enrichment
-                spotify_track = self._enrich_with_spotify(artist, title)
-                if spotify_track:
-                    spotify_track["source_url"] = video_url
-                    tracks.append(spotify_track)
-                else:
-                    tracks.append(
-                        Track(
-                            name=title,
-                            artists=[artist],
-                            album=None,
-                            cover_url=entry.get("thumbnail"),
-                            duration_ms=int(entry.get("duration", 0) * 1000)
-                            if entry.get("duration")
-                            else None,
-                            release_date=None,
-                            track_number=None,
-                            artist_ids=[],
-                            source_url=video_url,
-                        )
+                if not data:
+                    logger.error(
+                        f"No data returned from yt-dlp for playlist URL: {url}"
                     )
+                    return "YouTube Playlist", []
 
-            return playlist_name, tracks
+                # Get playlist title
+                playlist_name = data.get("title") or data.get(
+                    "playlist_title", "YouTube Playlist"
+                )
+                entries = data.get("entries", [])
 
-        except subprocess.CalledProcessError as e:
-            error_msg = e.stderr.strip() if e.stderr else str(e)
-            raise RuntimeError(f"Failed to fetch playlist: {error_msg}")
+                if not entries:
+                    logger.warning(f"No entries found in playlist: {playlist_name}")
+                    return playlist_name, []
+
+                logger.info(
+                    f"Found playlist '{playlist_name}' with {len(entries)} entries"
+                )
+
+                tracks: list[Track] = []
+
+                for i, entry in enumerate(entries, 1):
+                    if not entry:
+                        continue
+
+                    video_title = entry.get("title", "")
+                    video_uploader = entry.get("uploader") or entry.get(
+                        "channel", "Unknown"
+                    )
+                    video_url = entry.get("url") or entry.get("webpage_url", "")
+
+                    if not video_title:
+                        logger.debug(f"Skipping entry {i} with no title")
+                        continue
+
+                    artist, title = self._parse_video_title(video_title, video_uploader)
+                    logger.debug(f"[{i}/{len(entries)}] Parsed: '{artist}' - '{title}'")
+
+                    # Try Spotify enrichment
+                    spotify_track = self._enrich_with_spotify(artist, title)
+                    if spotify_track:
+                        logger.debug(f"Enriched with Spotify: {artist} - {title}")
+                        spotify_track["source_url"] = video_url
+                        tracks.append(spotify_track)
+                    else:
+                        tracks.append(
+                            Track(
+                                name=title,
+                                artists=[artist],
+                                album=None,
+                                cover_url=entry.get("thumbnail"),
+                                duration_ms=int(entry.get("duration", 0) * 1000)
+                                if entry.get("duration")
+                                else None,
+                                release_date=None,
+                                track_number=None,
+                                artist_ids=[],
+                                source_url=video_url,
+                            )
+                        )
+
+                logger.info(
+                    f"Processed {len(tracks)} tracks from playlist '{playlist_name}'"
+                )
+                return playlist_name, tracks
+
+        except yt_dlp.DownloadError as e:
+            logger.error(f"yt-dlp DownloadError fetching playlist for {url}: {e}")
+            raise RuntimeError(f"Failed to fetch playlist: {e}")
+        except yt_dlp.ExtractorError as e:
+            logger.error(f"yt-dlp ExtractorError fetching playlist for {url}: {e}")
+            raise RuntimeError(f"Failed to fetch playlist: {e}")
+        except Exception as e:
+            logger.error(
+                f"Unexpected error fetching playlist for {url}: {type(e).__name__}: {e}"
+            )
+            raise RuntimeError(f"Failed to fetch playlist: {e}")
