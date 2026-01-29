@@ -160,7 +160,14 @@ class YouTubeProvider:
 
     def get_track(self, url: str) -> Track | None:
         """Fetch single video info from YouTube URL."""
-        cmd = ["yt-dlp", *self._get_cookie_args(), "--dump-json", "--no-download", url]
+        cmd = [
+            "yt-dlp",
+            *self._get_cookie_args(),
+            "--dump-json",
+            "--no-download",
+            "--no-cookies-update",
+            url,
+        ]
 
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -202,6 +209,7 @@ class YouTubeProvider:
             "--dump-json",
             "--flat-playlist",
             "--no-download",
+            "--no-cookies-update",  # Prevent writing to read-only cookie file
             url,
         ]
 
