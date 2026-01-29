@@ -1,11 +1,17 @@
 FROM python:3.12-slim
 
-# Install system dependencies
+# Install system dependencies including deno for yt-dlp-ejs
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     wget \
     git \
+    curl \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
+
+# Install deno (required for yt-dlp-ejs to decipher YouTube n/sig values)
+RUN curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh
+ENV PATH="/usr/local/bin:$PATH"
 
 WORKDIR /app
 
