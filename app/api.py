@@ -38,6 +38,18 @@ class EndpointFilter(logging.Filter):
 # Filter out /health requests from access logs
 logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
 
+# Configure uvicorn access logs to match our format
+uvicorn_access = logging.getLogger("uvicorn.access")
+uvicorn_access.handlers = []
+handler = logging.StreamHandler()
+handler.setFormatter(
+    logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+)
+uvicorn_access.addHandler(handler)
+
 
 # App configuration
 APP_DIR = Path(__file__).parent.parent

@@ -2,6 +2,7 @@
 Background job worker for managing download tasks.
 """
 
+import logging
 import threading
 import uuid
 from datetime import datetime
@@ -10,6 +11,8 @@ from pathlib import Path
 from .downloader import TrackDownloader
 from .models import DownloadedTrack, Job, JobProgress, JobStatus
 from .providers import SpotifyProvider, YouTubeProvider
+
+logger = logging.getLogger(__name__)
 
 
 class JobWorker:
@@ -89,21 +92,32 @@ class JobWorker:
             job.status = JobStatus.RUNNING
             job.started_at = datetime.now()
 
+            logger.info(f"Processing job {job_id} for URL: {job.url}")
+
             # Detect provider
             if "spotify.com" in job.url:
                 provider = self.spotify_provider
+                logger.info(f"Using Spotify provider for: {job.url}")
             elif "youtube.com" in job.url or "youtu.be" in job.url:
                 provider = self.youtube_provider
+                logger.info(f"Using YouTube provider for: {job.url}")
             else:
+                logger.error(f"Unsupported URL: {job.url}")
                 raise ValueError("Unsupported URL")
 
             # Check if it's a single track or playlist
             is_single = any(x in job.url for x in ["/track/", "/watch?v="])
+            logger.debug(f"URL type: {'single track' if is_single else 'playlist'}")
 
             if is_single:
+                logger.info(f"Fetching single track info for: {job.url}")
                 track = provider.get_track(job.url)
                 if not track:
+                    logger.error(f"Failed to fetch track info for URL: {job.url}")
                     raise ValueError("Could not fetch track info")
+                logger.info(
+                    f"Got track: {track.get('artists', ['?'])[0]} - {track.get('name', '?')}"
+                )
                 job.playlist_name = f"{track['artists'][0]} - {track['name']}"
                 tracks = [track]
             else:

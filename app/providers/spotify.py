@@ -4,11 +4,14 @@ Spotify provider - fetches playlists/tracks from Spotify API.
 
 import base64
 import json
+import logging
 import re
 import urllib.parse
 import urllib.request
 
 from .base import Track
+
+logger = logging.getLogger(__name__)
 
 
 class SpotifyProvider:
@@ -35,8 +38,12 @@ class SpotifyProvider:
             return self._token
 
         if not self.client_id or not self.client_secret:
+            logger.error(
+                "Spotify credentials not configured (missing client_id or client_secret)"
+            )
             raise ValueError("Spotify credentials not configured")
 
+        logger.debug("Fetching Spotify access token")
         auth_url = "https://accounts.spotify.com/api/token"
         auth_data = urllib.parse.urlencode(
             {"grant_type": "client_credentials"}
@@ -55,10 +62,18 @@ class SpotifyProvider:
             },
         )
 
-        with urllib.request.urlopen(req) as response:
-            data = json.loads(response.read())
-            self._token = data["access_token"]
-            return self._token
+        try:
+            with urllib.request.urlopen(req) as response:
+                data = json.loads(response.read())
+                self._token = data["access_token"]
+                logger.debug("Successfully obtained Spotify access token")
+                return self._token
+        except urllib.error.HTTPError as e:
+            logger.error(f"Failed to get Spotify token: HTTP {e.code} - {e.reason}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to get Spotify token: {type(e).__name__}: {e}")
+            raise
 
     def _api_request(self, endpoint: str) -> dict:
         """Make authenticated API request."""
@@ -134,16 +149,32 @@ class SpotifyProvider:
 
     def get_track(self, url: str) -> Track | None:
         """Fetch single track from Spotify URL."""
+        logger.info(f"Fetching Spotify track from: {url}")
         track_id = self._extract_id(url, "track")
         if not track_id:
+            logger.error(f"Could not extract track ID from URL: {url}")
             return None
+
+        logger.debug(f"Extracted track ID: {track_id}")
 
         try:
             data = self._api_request(f"tracks/{track_id}")
             artist_ids = [a["id"] for a in data.get("artists", []) if a.get("id")]
             genre = self._get_artist_genres(artist_ids)
-            return self._parse_track(data, genre=genre)
-        except Exception:
+            track = self._parse_track(data, genre=genre)
+            logger.info(
+                f"Got Spotify track: {track.get('artists', ['?'])[0]} - {track.get('name', '?')}"
+            )
+            return track
+        except urllib.error.HTTPError as e:
+            logger.error(
+                f"Spotify API error fetching track {track_id}: HTTP {e.code} - {e.reason}"
+            )
+            return None
+        except Exception as e:
+            logger.error(
+                f"Error fetching Spotify track {track_id}: {type(e).__name__}: {e}"
+            )
             return None
 
     def _fetch_genres_for_artists(self, artist_ids: list[str]) -> dict[str, str]:
