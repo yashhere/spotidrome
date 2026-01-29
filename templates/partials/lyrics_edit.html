@@ -50,6 +50,20 @@
         </div>
         <div class="track-info">
           <p class="track-filename">{{ filename }}</p>
+          <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem; flex-direction: column;">
+            <input type="text" id="art-url-input" placeholder="Paste image URL here..." class="form-control"
+              style="font-size: 0.85rem;" />
+            <div style="display: flex; gap: 0.5rem;">
+              <button type="button" class="btn-secondary" style="flex: 1; font-size: 0.85rem; padding: 0.4rem 0.75rem;"
+                onclick="uploadFromUrl()">
+                📎 Load from URL
+              </button>
+              <button type="button" class="btn-secondary" style="flex: 1; font-size: 0.85rem; padding: 0.4rem 0.75rem;"
+                onclick="pasteFromClipboard()">
+                📋 Paste from Clipboard
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -229,24 +243,100 @@
 
       if (response.ok) {
         showToast("Album art updated!", "success");
-        // Update preview
-        const preview = document.getElementById("art-preview");
-        const img = document.getElementById("art-image");
-        if (img) {
-          img.src =
-            "/api/tracks/art?file_path={{ file_path | urlencode }}&t=" +
-            Date.now();
-        } else {
-          preview.innerHTML =
-            '<img src="/api/tracks/art?file_path={{ file_path | urlencode }}&t=' +
-            Date.now() +
-            '" alt="Album Art" id="art-image">';
-        }
-      } else {
-        showToast("Failed to update album art", "error");
-      }
-    } catch (e) {
-      showToast("Failed to upload", "error");
+                updateArtPreview();
+              } else {
+                showToast("Failed to update album art", "error");
+              }
+            } catch (e) {
+              showToast("Failed to upload", "error");
+            }
+          }
+
+          async function uploadFromUrl() {
+            const urlInput = document.getElementById("art-url-input");
+            const url = urlInput.value.trim();
+
+            if (!url) {
+              showToast("Please enter an image URL", "error");
+              return;
+            }
+
+            try {
+              showToast("Downloading image...", "success");
+
+              const formData = new FormData();
+              formData.append("file_path", "{{ file_path }}");
+              formData.append("art_url", url);
+
+              const response = await fetch("/api/tracks/art", {
+                method: "POST",
+                body: formData,
+              });
+
+              if (response.ok) {
+                showToast("Album art updated from URL!", "success");
+                urlInput.value = "";
+                updateArtPreview();
+              } else {
+                const error = await response.json();
+                showToast(error.detail || "Failed to load image from URL", "error");
+              }
+            } catch (e) {
+              showToast("Failed to download image", "error");
+            }
+          }
+
+          async function pasteFromClipboard() {
+            try {
+              const clipboardItems = await navigator.clipboard.read();
+
+              for (const item of clipboardItems) {
+                const imageTypes = item.types.filter(type => type.startsWith('image/'));
+
+                if (imageTypes.length === 0) {
+                  showToast("No image found in clipboard", "error");
+                  return;
+                }
+
+                const blob = await item.getType(imageTypes[0]);
+
+                showToast("Uploading image from clipboard...", "success");
+
+                const formData = new FormData();
+                formData.append("file_path", "{{ file_path }}");
+                formData.append("art", blob, "clipboard.png");
+
+                const response = await fetch("/api/tracks/art", {
+                  method: "POST",
+                  body: formData,
+                });
+
+                if (response.ok) {
+                  showToast("Album art updated from clipboard!", "success");
+                  updateArtPreview();
+                } else {
+                  showToast("Failed to update album art", "error");
+                }
+                return;
+              }
+            } catch (e) {
+              showToast("Failed to read clipboard. Make sure you've copied an image.", "error");
+            }
+          }
+
+          function updateArtPreview() {
+            const preview = document.getElementById("art-preview");
+            const img = document.getElementById("art-image");
+    const timestamp = Date.now();
+
+    if (img) {
+      img.src = "/api/tracks/art?file_path={{ file_path | urlencode }}&t=" + timestamp;
+    } else {
+      preview.innerHTML =
+        '<img src="/api/tracks/art?file_path={{ file_path | urlencode }}&t=' +
+        timestamp +
+        '" alt="Album Art" id="art-image">' +
+        '<label class="art-overlay"><span>📷</span><input type="file" accept="image/*" id="art-upload" style="display: none" onchange="uploadAlbumArt(this)"/></label>';
     }
   }
 </script>

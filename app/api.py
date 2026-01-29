@@ -361,7 +361,9 @@ async def update_track(
 
 
 @app.post("/api/tracks/art")
-async def update_album_art(file_path: str = Form(...), art: UploadFile = File(...)):
+async def update_album_art(
+    file_path: str = Form(...), art: UploadFile = File(None), art_url: str = Form(None)
+):
     """Update album art for a track."""
     track_path = Path(file_path)
     if not track_path.is_absolute():
@@ -370,13 +372,34 @@ async def update_album_art(file_path: str = Form(...), art: UploadFile = File(..
     if not track_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
 
-    # Read uploaded image
-    art_data = await art.read()
+    # Get image data from either file upload or URL
+    art_data = None
+    mime_type = "image/jpeg"
+
+    if art:
+        # File upload
+        art_data = await art.read()
+        mime_type = art.content_type or "image/jpeg"
+    elif art_url:
+        # Download from URL
+        try:
+            import httpx
+
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(art_url)
+                response.raise_for_status()
+                art_data = response.content
+                mime_type = response.headers.get("content-type", "image/jpeg")
+        except Exception as e:
+            logger.error(f"Failed to download image from URL: {e}")
+            raise HTTPException(
+                status_code=400, detail=f"Failed to download image: {str(e)}"
+            )
+    else:
+        raise HTTPException(status_code=400, detail="No image data provided")
+
     if not art_data:
         raise HTTPException(status_code=400, detail="No image data")
-
-    # Determine mime type
-    mime_type = art.content_type or "image/jpeg"
 
     try:
         try:
