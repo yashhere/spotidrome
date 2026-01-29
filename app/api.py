@@ -10,7 +10,7 @@ from pathlib import Path
 import httpx
 import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from mutagen.easyid3 import EasyID3
@@ -28,6 +28,15 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+
+class EndpointFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.getMessage().find("GET /health") == -1
+
+
+# Filter out /health requests from access logs
+logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
 
 
 # App configuration
@@ -54,6 +63,11 @@ worker = JobWorker(
     spotify_client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
     youtube_cookies=os.getenv("YOUTUBE_COOKIES") or os.getenv("YOUTUBE_COOKIES_FILE"),
 )
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse(STATIC_DIR / "favicon.png")
 
 
 @app.get("/", response_class=HTMLResponse)
