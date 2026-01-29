@@ -85,7 +85,7 @@ worker = JobWorker(
     output_dir=MUSIC_DIR,
     spotify_client_id=os.getenv("SPOTIFY_CLIENT_ID"),
     spotify_client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
-    youtube_cookies=os.getenv("YOUTUBE_COOKIES") or os.getenv("YOUTUBE_COOKIES_FILE"),
+    youtube_cookies=os.getenv("YOUTUBE_COOKIES_FILE"),
 )
 
 
