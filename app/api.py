@@ -7,6 +7,7 @@ import os
 import re
 from pathlib import Path
 
+import httpx
 import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, Response
@@ -383,8 +384,6 @@ async def update_album_art(
     elif art_url:
         # Download from URL
         try:
-            import httpx
-
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(art_url)
                 response.raise_for_status()
