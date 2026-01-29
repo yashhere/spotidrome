@@ -304,6 +304,14 @@ async def update_track(
     if not track_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
 
+    # Get current metadata to check for changes
+    old_artist = None
+    try:
+        audio = EasyID3(track_path)
+        old_artist = audio.get("artist", [""])[0]
+    except Exception:
+        pass
+
     # Update metadata
     update_metadata_in_file(
         track_path,
@@ -315,6 +323,51 @@ async def update_track(
             "track_number": track_number,
         },
     )
+
+    # Reorganize file if artist changed
+    new_path = track_path
+    if artist and old_artist and artist != old_artist:
+        # Sanitize artist name for directory
+        safe_artist = "".join(
+            c for c in artist if c.isalnum() or c in (" ", "_", "-")
+        ).strip()
+        safe_artist = safe_artist.replace(" ", "_")
+
+        # New directory
+        new_dir = MUSIC_DIR / safe_artist
+        new_dir.mkdir(parents=True, exist_ok=True)
+
+        # New file path
+        new_filename = track_path.name
+        new_path = new_dir / new_filename
+
+        # Move file if destination doesn't exist (to avoid overwriting)
+        if not new_path.exists():
+            try:
+                # Move .lrc file first if it exists
+                lrc_path = track_path.with_suffix(".lrc")
+                if lrc_path.exists():
+                    new_lrc_path = new_path.with_suffix(".lrc")
+                    lrc_path.rename(new_lrc_path)
+
+                # Move audio file
+                track_path.rename(new_path)
+                logger.info(f"Moved track from {track_path} to {new_path}")
+
+                # Try to remove old directory if empty
+                try:
+                    old_dir = track_path.parent
+                    if old_dir != MUSIC_DIR and not any(old_dir.iterdir()):
+                        old_dir.rmdir()
+                        logger.info(f"Removed empty directory: {old_dir}")
+                except Exception as e:
+                    logger.warning(f"Failed to remove empty directory: {e}")
+
+                track_path = new_path
+            except Exception as e:
+                logger.error(f"Failed to move file: {e}")
+                # Revert track_path if move failed
+                new_path = track_path
 
     # Update lyrics if provided
     if lyrics is not None:
