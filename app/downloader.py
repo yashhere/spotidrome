@@ -27,19 +27,25 @@ class TrackDownloader:
         self,
         output_dir: Path,
         progress_callback: Callable[[str, int, int], None] | None = None,
+        cookies: str | None = None,
     ):
         """
         Args:
             output_dir: Directory to save downloaded files
             progress_callback: Optional callback(status, current, total) for progress updates
+            cookies: Path to cookies file or browser name
         """
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.progress_callback = progress_callback
+        self.cookies = cookies
         self.lyrics_provider = LyricsProvider()
 
-    def _sanitize_filename(self, name: str) -> str:
+    def _sanitize_filename(self, name: str | None) -> str:
         """Create safe filename (ASCII with underscores)."""
+        if not name:
+            return "Unknown"
+
         # Normalize unicode and convert to ASCII
         name = (
             unicodedata.normalize("NFKD", name)
@@ -161,17 +167,29 @@ class TrackDownloader:
         cmd = [
             "yt-dlp",
             search_term,
-            "--extract-audio",
-            "--audio-format",
-            "mp3",
-            "--audio-quality",
-            "0",
-            "--output",
-            str(artist_dir / f"{safe_title}.%(ext)s"),
-            "--no-playlist",
-            "--no-warnings",
-            "--quiet",
         ]
+
+        # Add cookies if configured
+        if self.cookies:
+            if Path(self.cookies).exists():
+                cmd.extend(["--cookies", self.cookies])
+            else:
+                cmd.extend(["--cookies-from-browser", self.cookies])
+
+        cmd.extend(
+            [
+                "--extract-audio",
+                "--audio-format",
+                "mp3",
+                "--audio-quality",
+                "0",
+                "--output",
+                str(artist_dir / f"{safe_title}.%(ext)s"),
+                "--no-playlist",
+                "--no-warnings",
+                "--quiet",
+            ]
+        )
 
         try:
             subprocess.run(cmd, check=True, capture_output=True, text=True)

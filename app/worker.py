@@ -120,7 +120,11 @@ class JobWorker:
                 job.progress.total = total
                 job.progress.current_track = status
 
-            downloader = TrackDownloader(self.output_dir, progress_callback)
+            downloader = TrackDownloader(
+                self.output_dir,
+                progress_callback,
+                cookies=self.youtube_provider.cookies,
+            )
 
             # Download and collect track info
             downloaded_tracks = []

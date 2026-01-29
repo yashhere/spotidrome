@@ -92,7 +92,7 @@ class SpotifyProvider:
         artist_ids = [a["id"] for a in track_data.get("artists", []) if a.get("id")]
 
         return Track(
-            name=track_data.get("name", ""),
+            name=track_data.get("name") or "",
             artists=artists,
             album=album_data.get("name"),
             cover_url=album_data.get("images", [{}])[0].get("url")

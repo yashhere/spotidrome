@@ -91,8 +91,10 @@ class YouTubeProvider:
 
         return artist, track_title
 
-    def _normalize(self, text: str) -> set[str]:
+    def _normalize(self, text: str | None) -> set[str]:
         """Normalize text for comparison - lowercase, remove punctuation, split into words."""
+        if not text:
+            return set()
 
         # Normalize unicode
         text = unicodedata.normalize("NFKD", text)
