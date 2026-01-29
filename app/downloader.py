@@ -4,12 +4,12 @@ Core download logic - downloads tracks using yt-dlp and applies metadata.
 
 import logging
 import re
-import subprocess
 import unicodedata
 import urllib.request
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
+import yt_dlp
 from mutagen.easyid3 import EasyID3
 from mutagen.id3 import APIC, ID3, USLT, Encoding
 from mutagen.id3._util import ID3NoHeaderError
@@ -18,6 +18,9 @@ from .lyrics import LyricsProvider
 from .providers.base import Track
 
 logger = logging.getLogger(__name__)
+
+# Common user agent for requests
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 
 
 class TrackDownloader:
@@ -40,6 +43,7 @@ class TrackDownloader:
         self.progress_callback = progress_callback
         self.cookies = cookies
         self.lyrics_provider = LyricsProvider()
+        self._current_track_info: dict[str, str] = {}  # For progress hook context
 
     def _sanitize_filename(self, name: str | None) -> str:
         """Create safe filename (ASCII with underscores)."""
@@ -66,6 +70,46 @@ class TrackDownloader:
         """Report progress via callback if set."""
         if self.progress_callback:
             self.progress_callback(status, current, total)
+
+    def _yt_dlp_progress_hook(self, d: dict[str, Any]) -> None:
+        """Progress hook for yt-dlp to report download progress."""
+        status = d.get("status", "")
+        artist = self._current_track_info.get("artist", "Unknown")
+        title = self._current_track_info.get("title", "Unknown")
+
+        if status == "downloading":
+            downloaded = d.get("downloaded_bytes", 0)
+            total = d.get("total_bytes") or d.get("total_bytes_estimate", 0)
+            if total > 0:
+                percent = int((downloaded / total) * 100)
+                speed = d.get("speed", 0)
+                speed_str = f"{speed / 1024:.1f} KB/s" if speed else "calculating..."
+                self._report_progress(
+                    f"Downloading {artist} - {title}: {percent}% ({speed_str})"
+                )
+                logger.debug(f"Download progress: {percent}% for {artist} - {title}")
+        elif status == "finished":
+            filename = d.get("filename", "unknown")
+            logger.info(f"Download finished: {filename}")
+            self._report_progress(f"Processing: {artist} - {title}")
+        elif status == "error":
+            logger.error(f"Download error in progress hook for {artist} - {title}")
+
+    def _yt_dlp_postprocessor_hook(self, d: dict[str, Any]) -> None:
+        """Postprocessor hook for yt-dlp to log postprocessing steps."""
+        status = d.get("status", "")
+        postprocessor = d.get("postprocessor", "unknown")
+        artist = self._current_track_info.get("artist", "Unknown")
+        title = self._current_track_info.get("title", "Unknown")
+
+        if status == "started":
+            logger.debug(
+                f"Postprocessor '{postprocessor}' started for {artist} - {title}"
+            )
+        elif status == "finished":
+            logger.debug(
+                f"Postprocessor '{postprocessor}' finished for {artist} - {title}"
+            )
 
     def _check_missing_metadata(self, file_path: Path) -> dict:
         """Check what metadata is missing from an existing file.
@@ -101,8 +145,59 @@ class TrackDownloader:
 
         return missing
 
+    def _build_yt_dlp_opts(self, output_template: str) -> dict[str, Any]:
+        """Build yt-dlp options dictionary.
+
+        Args:
+            output_template: Output path template for downloaded files
+
+        Returns:
+            Dictionary of yt-dlp options
+        """
+        opts: dict[str, Any] = {
+            # Audio extraction settings
+            "format": "bestaudio/best",
+            "postprocessors": [
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": "0",  # Best quality
+                }
+            ],
+            # Output settings
+            "outtmpl": output_template,
+            "noplaylist": True,
+            # Logging and progress
+            "quiet": True,
+            "no_warnings": True,
+            "progress_hooks": [self._yt_dlp_progress_hook],
+            "postprocessor_hooks": [self._yt_dlp_postprocessor_hook],
+            # Network settings
+            "http_headers": {
+                "User-Agent": USER_AGENT,
+                "Referer": "https://www.youtube.com/",
+            },
+            # Rate limiting to avoid being blocked
+            "sleep_interval": 1,
+            "max_sleep_interval": 3,
+            # Retry settings
+            "retries": 3,
+            "fragment_retries": 3,
+        }
+
+        # Add cookies if configured
+        if self.cookies:
+            if Path(self.cookies).exists():
+                opts["cookiefile"] = self.cookies
+                logger.debug(f"Using cookies file: {self.cookies}")
+            else:
+                opts["cookiesfrombrowser"] = (self.cookies,)
+                logger.debug(f"Using cookies from browser: {self.cookies}")
+
+        return opts
+
     def download_track(self, track: Track) -> Path | None:
-        """Download a single track.
+        """Download a single track using yt-dlp Python library.
 
         Returns:
             Path to downloaded file, or None if failed
@@ -116,6 +211,9 @@ class TrackDownloader:
 
         safe_artist = self._sanitize_filename(artist)
         safe_title = self._sanitize_filename(track_name)
+
+        # Store current track info for progress hooks
+        self._current_track_info = {"artist": artist, "title": track_name}
 
         artist_dir = self.output_dir / safe_artist
         artist_dir.mkdir(parents=True, exist_ok=True)
@@ -162,93 +260,121 @@ class TrackDownloader:
             search_term = f"ytsearch1:{artist} {track_name}"
             logger.info(f"Searching YouTube for: {artist} - {track_name}")
 
-        self._report_progress(f"Downloading: {artist} - {track_name}")
+        self._report_progress(f"Starting download: {artist} - {track_name}")
 
-        cmd = [
-            "yt-dlp",
-            search_term,
-        ]
+        # Build yt-dlp options
+        output_template = str(artist_dir / f"{safe_title}.%(ext)s")
+        ydl_opts = self._build_yt_dlp_opts(output_template)
 
-        # Add cookies if configured
-        if self.cookies:
-            if Path(self.cookies).exists():
-                cmd.extend(["--cookies", self.cookies])
-            else:
-                cmd.extend(["--cookies-from-browser", self.cookies])
-
-        cmd.extend(
-            [
-                "--extract-audio",
-                "--audio-format",
-                "mp3",
-                "--audio-quality",
-                "0",
-                "--output",
-                str(artist_dir / f"{safe_title}.%(ext)s"),
-                "--no-playlist",
-                "--no-warnings",
-                "--quiet",
-                "--user-agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                "--referer",
-                "https://www.youtube.com/",
-                "--sleep-interval",
-                "1",
-                "--max-sleep-interval",
-                "3",
-            ]
+        logger.info(
+            f"Initializing yt-dlp for: {artist} - {track_name} "
+            f"(cookies={'yes' if self.cookies else 'no'})"
+        )
+        logger.debug(
+            f"yt-dlp options: format={ydl_opts['format']}, output={output_template}"
         )
 
         try:
-            logger.info(
-                f"Running yt-dlp for: {artist} - {track_name} (cookies={'yes' if self.cookies else 'no'})"
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                logger.debug(f"Extracting info for: {search_term}")
+
+                # Extract info first to get metadata
+                try:
+                    info = ydl.extract_info(search_term, download=False)
+                    if info:
+                        video_title = info.get("title", "Unknown")
+                        video_id = info.get("id", "Unknown")
+                        duration = info.get("duration", 0)
+                        logger.info(
+                            f"Found video: '{video_title}' (ID: {video_id}, duration: {duration}s)"
+                        )
+                except Exception as extract_err:
+                    logger.warning(
+                        f"Failed to extract info before download: {extract_err}"
+                    )
+                    # Continue anyway, download might still work
+
+                # Perform the download
+                logger.info(f"Starting download for: {artist} - {track_name}")
+                error_code = ydl.download([search_term])
+
+                if error_code != 0:
+                    logger.error(
+                        f"yt-dlp returned error code {error_code} for {artist} - {track_name}"
+                    )
+                    self._report_progress(f"Failed: yt-dlp error code {error_code}")
+                    return None
+
+                logger.info(
+                    f"Download completed successfully for: {artist} - {track_name}"
+                )
+
+        except yt_dlp.DownloadError as e:
+            error_msg = str(e)
+            logger.error(
+                f"yt-dlp DownloadError for {artist} - {track_name}: {error_msg}"
             )
-            result = subprocess.run(
-                cmd, check=True, capture_output=True, text=True, timeout=300
-            )
-            logger.debug(f"yt-dlp completed for: {artist} - {track_name}")
-            if result.stdout:
-                logger.debug(f"yt-dlp stdout: {result.stdout[:500]}")
-        except subprocess.TimeoutExpired:
-            logger.error(f"Download timed out after 300s for {artist} - {track_name}")
-            self._report_progress("Failed: Download timed out")
-            return None
-        except subprocess.CalledProcessError as e:
-            error_msg = e.stderr[:500] if e.stderr else str(e)
-            logger.error(f"Download failed for {artist} - {track_name}: {error_msg}")
-            if e.stdout:
-                logger.error(f"yt-dlp stdout: {e.stdout[:500]}")
             self._report_progress(f"Failed: {error_msg[:100]}")
+            return None
+        except yt_dlp.ExtractorError as e:
+            error_msg = str(e)
+            logger.error(
+                f"yt-dlp ExtractorError for {artist} - {track_name}: {error_msg}"
+            )
+            self._report_progress(f"Failed: Extractor error - {error_msg[:80]}")
+            return None
+        except yt_dlp.PostProcessingError as e:
+            error_msg = str(e)
+            logger.error(
+                f"yt-dlp PostProcessingError for {artist} - {track_name}: {error_msg}"
+            )
+            self._report_progress(f"Failed: Post-processing error - {error_msg[:80]}")
             return None
         except Exception as e:
             logger.error(
-                f"Unexpected error downloading {artist} - {track_name}: {type(e).__name__}: {str(e)}"
+                f"Unexpected error downloading {artist} - {track_name}: "
+                f"{type(e).__name__}: {str(e)}"
             )
             self._report_progress(f"Failed: {str(e)[:100]}")
             return None
 
         # Find the downloaded file
+        logger.debug(f"Looking for downloaded file at: {output_path}")
         downloaded_path = None
         if output_path.exists():
             downloaded_path = output_path
+            logger.debug(f"Found expected file: {output_path}")
         else:
-            # Try other extensions
+            # Try other extensions (yt-dlp might not have converted yet)
+            logger.debug("Expected .mp3 not found, checking other extensions...")
             for ext in [".mp3", ".m4a", ".opus", ".webm"]:
                 alt_path = artist_dir / f"{safe_title}{ext}"
                 if alt_path.exists():
                     downloaded_path = alt_path
+                    logger.debug(f"Found alternative file: {alt_path}")
                     break
 
         if not downloaded_path:
             logger.error(f"Could not find downloaded file for: {artist} - {track_name}")
+            # List directory contents for debugging
+            try:
+                dir_contents = list(artist_dir.iterdir())
+                logger.debug(f"Directory contents of {artist_dir}: {dir_contents}")
+            except Exception as e:
+                logger.debug(f"Failed to list directory: {e}")
             return None
 
+        logger.info(f"Downloaded file located: {downloaded_path}")
+
         # Apply metadata and album art
+        logger.debug(f"Applying metadata tags to: {downloaded_path}")
         self._tag_file(downloaded_path, track)
 
         # Fetch and save lyrics
+        logger.debug(f"Fetching lyrics for: {artist} - {track_name}")
         self._fetch_lyrics(downloaded_path, track)
 
+        logger.info(f"Track processing complete: {downloaded_path}")
         return downloaded_path
 
     def _tag_file(self, file_path: Path, track: Track) -> None:
