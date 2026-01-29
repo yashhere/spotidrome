@@ -200,12 +200,31 @@ class TrackDownloader:
         )
 
         try:
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            logger.info(
+                f"Running yt-dlp for: {artist} - {track_name} (cookies={'yes' if self.cookies else 'no'})"
+            )
+            result = subprocess.run(
+                cmd, check=True, capture_output=True, text=True, timeout=300
+            )
             logger.debug(f"yt-dlp completed for: {artist} - {track_name}")
+            if result.stdout:
+                logger.debug(f"yt-dlp stdout: {result.stdout[:500]}")
+        except subprocess.TimeoutExpired:
+            logger.error(f"Download timed out after 300s for {artist} - {track_name}")
+            self._report_progress("Failed: Download timed out")
+            return None
         except subprocess.CalledProcessError as e:
-            error_msg = e.stderr[:200] if e.stderr else str(e)
+            error_msg = e.stderr[:500] if e.stderr else str(e)
             logger.error(f"Download failed for {artist} - {track_name}: {error_msg}")
-            self._report_progress(f"Failed: {error_msg}")
+            if e.stdout:
+                logger.error(f"yt-dlp stdout: {e.stdout[:500]}")
+            self._report_progress(f"Failed: {error_msg[:100]}")
+            return None
+        except Exception as e:
+            logger.error(
+                f"Unexpected error downloading {artist} - {track_name}: {type(e).__name__}: {str(e)}"
+            )
+            self._report_progress(f"Failed: {str(e)[:100]}")
             return None
 
         # Find the downloaded file
