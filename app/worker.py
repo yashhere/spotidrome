@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .downloader import TrackDownloader
 from .models import DownloadedTrack, Job, JobProgress, JobStatus
-from .providers import SpotifyProvider, YouTubeProvider
+from .providers import SpotifyProvider, YouTubeProvider, YTMusicProvider
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,7 @@ class JobWorker:
             spotify_client_id, spotify_client_secret
         )
         self.youtube_provider = YouTubeProvider(youtube_cookies, self.spotify_provider)
+        self.ytmusic_provider = YTMusicProvider()
 
     def update_settings(
         self,
@@ -98,6 +99,9 @@ class JobWorker:
             if "spotify.com" in job.url:
                 provider = self.spotify_provider
                 logger.info(f"Using Spotify provider for: {job.url}")
+            elif "music.youtube.com" in job.url:
+                provider = self.ytmusic_provider
+                logger.info(f"Using YouTube Music provider for: {job.url}")
             elif "youtube.com" in job.url or "youtu.be" in job.url:
                 provider = self.youtube_provider
                 logger.info(f"Using YouTube provider for: {job.url}")

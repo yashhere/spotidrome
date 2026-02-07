@@ -5,6 +5,7 @@ Provider registry - auto-detects URL type and returns appropriate provider.
 from .base import PlaylistProvider, Track
 from .spotify import SpotifyProvider
 from .youtube import CookieExpiredError, YouTubeProvider
+from .ytmusic import YTMusicProvider
 
 __all__ = [
     "CookieExpiredError",
@@ -12,6 +13,7 @@ __all__ = [
     "Track",
     "SpotifyProvider",
     "YouTubeProvider",
+    "YTMusicProvider",
     "get_provider",
 ]
 

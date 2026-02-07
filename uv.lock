@@ -678,6 +678,7 @@ dependencies = [
     { name = "spotipy" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "yt-dlp", extra = ["default"] },
+    { name = "ytmusicapi" },
 ]
 
 [package.metadata]
@@ -693,6 +694,7 @@ requires-dist = [
     { name = "spotipy", specifier = ">=2.25.2" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.40.0" },
     { name = "yt-dlp", extras = ["default"], specifier = ">=2025.12.8" },
+    { name = "ytmusicapi", specifier = ">=1.10.1" },
 ]
 
 [[package]]
@@ -952,4 +954,16 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/de/72/57d02cf78eb45126bd171298d6a58a5bd48ce1a398b6b7ff00fc904f1f0c/yt_dlp_ejs-0.3.2.tar.gz", hash = "sha256:31a41292799992bdc913e03c9fac2a8c90c82a5cbbc792b2e3373b01da841e3e", size = 34678, upload-time = "2025-12-07T23:44:48.258Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9d/0d/1f0d7a735ca60b87953271b15d00eff5eef05f6118390ddf6f81982526ed/yt_dlp_ejs-0.3.2-py3-none-any.whl", hash = "sha256:f2dc6b3d1b909af1f13e021621b0af048056fca5fb07c4db6aa9bbb37a4f66a9", size = 53252, upload-time = "2025-12-07T23:44:46.605Z" },
+]
+
+[[package]]
+name = "ytmusicapi"
+version = "1.11.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ac/4b/a44292f732903dc26a90236ad1cf284da974ed5491df388cf15713b38429/ytmusicapi-1.11.5.tar.gz", hash = "sha256:48f35901291c8af9934ec0aa9cd6b9fd1a19c543f843c39c9e8b396356b47801", size = 413046, upload-time = "2026-01-31T09:51:27.86Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/aa/a8/8feb17eaa8b2bf36b0617ba37f949a7036b6ece652672bd4517a54326f0e/ytmusicapi-1.11.5-py3-none-any.whl", hash = "sha256:f6b1e031408cce45bef207bfda449e3ecf548f7c4ff0c091c575d4a27eb21da6", size = 102313, upload-time = "2026-01-31T09:51:26.255Z" },
 ]
