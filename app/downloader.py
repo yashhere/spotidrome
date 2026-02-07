@@ -301,12 +301,29 @@ class TrackDownloader:
                 try:
                     info = ydl.extract_info(search_term, download=False)
                     if info:
-                        video_title = info.get("title", "Unknown")
-                        video_id = info.get("id", "Unknown")
-                        duration = info.get("duration", 0)
-                        logger.info(
-                            f"Found video: '{video_title}' (ID: {video_id}, duration: {duration}s)"
-                        )
+                        # Handle search results (playlist-like 'entries')
+                        if "entries" in info:
+                            entries = info.get("entries", [])
+                            if entries:
+                                video_info = entries[0]
+                                video_title = video_info.get("title", "Unknown")
+                                video_id = video_info.get("id", "Unknown")
+                                duration = video_info.get("duration", 0)
+                                logger.info(
+                                    f"Found video via search: '{video_title}' (ID: {video_id}, duration: {duration}s)"
+                                )
+                            else:
+                                logger.warning(
+                                    f"No entries found for search: {search_term}"
+                                )
+                        else:
+                            # Direct video info
+                            video_title = info.get("title", "Unknown")
+                            video_id = info.get("id", "Unknown")
+                            duration = info.get("duration", 0)
+                            logger.info(
+                                f"Found video: '{video_title}' (ID: {video_id}, duration: {duration}s)"
+                            )
                 except Exception as extract_err:
                     logger.warning(
                         f"Failed to extract info before download: {extract_err}"
@@ -335,6 +352,12 @@ class TrackDownloader:
             )
             if is_cookie_error(error_msg):
                 raise CookieExpiredError(get_cookie_error_message()) from e
+            if "HTTP Error 403" in error_msg:
+                raise CookieExpiredError(
+                    "YouTube refused the connection (403 Forbidden). "
+                    "This usually means your cookies are invalid or your IP is blocked. "
+                    "Try updating your cookies file."
+                ) from e
             self._report_progress(f"Failed: {error_msg[:100]}")
             return None
         except yt_dlp.ExtractorError as e:
@@ -344,7 +367,13 @@ class TrackDownloader:
             )
             if is_cookie_error(error_msg):
                 raise CookieExpiredError(get_cookie_error_message()) from e
-            self._report_progress(f"Failed: Extractor error - {error_msg[:80]}")
+            if "HTTP Error 403" in error_msg:
+                raise CookieExpiredError(
+                    "YouTube refused the connection (403 Forbidden). "
+                    "This usually means your cookies are invalid or your IP is blocked. "
+                    "Try updating your cookies file."
+                ) from e
+            self._report_progress(f"Failed: {error_msg[:100]}")
             return None
         except yt_dlp.PostProcessingError as e:
             error_msg = str(e)
