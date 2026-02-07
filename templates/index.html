@@ -47,6 +47,10 @@
   >
     Library
   </button>
+  <button class="tab" id="tab-settings" hx-get="/api/settings" hx-target="#content-area" hx-swap="innerHTML"
+    hx-push-url="/#settings" hx-on:click="setActiveTab(this)">
+    Settings
+  </button>
 </section>
 
 <script>
@@ -63,6 +67,9 @@
     if (hash === "#library") {
       setActiveTab(document.getElementById("tab-library"));
       htmx.trigger("#tab-library", "click");
+    } else if (hash === "#settings") {
+      setActiveTab(document.getElementById("tab-settings"));
+      htmx.trigger("#tab-settings", "click");
     }
   });
 </script>

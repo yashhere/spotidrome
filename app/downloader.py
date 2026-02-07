@@ -16,6 +16,11 @@ from mutagen.id3._util import ID3NoHeaderError
 
 from .lyrics import LyricsProvider
 from .providers.base import Track
+from .providers.youtube import (
+    CookieExpiredError,
+    get_cookie_error_message,
+    is_cookie_error,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -328,6 +333,8 @@ class TrackDownloader:
             logger.error(
                 f"yt-dlp DownloadError for {artist} - {track_name}: {error_msg}"
             )
+            if is_cookie_error(error_msg):
+                raise CookieExpiredError(get_cookie_error_message()) from e
             self._report_progress(f"Failed: {error_msg[:100]}")
             return None
         except yt_dlp.ExtractorError as e:
@@ -335,6 +342,8 @@ class TrackDownloader:
             logger.error(
                 f"yt-dlp ExtractorError for {artist} - {track_name}: {error_msg}"
             )
+            if is_cookie_error(error_msg):
+                raise CookieExpiredError(get_cookie_error_message()) from e
             self._report_progress(f"Failed: Extractor error - {error_msg[:80]}")
             return None
         except yt_dlp.PostProcessingError as e:
@@ -344,12 +353,17 @@ class TrackDownloader:
             )
             self._report_progress(f"Failed: Post-processing error - {error_msg[:80]}")
             return None
+        except CookieExpiredError:
+            raise
         except Exception as e:
+            error_msg = str(e)
             logger.error(
                 f"Unexpected error downloading {artist} - {track_name}: "
-                f"{type(e).__name__}: {str(e)}"
+                f"{type(e).__name__}: {error_msg}"
             )
-            self._report_progress(f"Failed: {str(e)[:100]}")
+            if is_cookie_error(error_msg):
+                raise CookieExpiredError(get_cookie_error_message()) from e
+            self._report_progress(f"Failed: {error_msg[:100]}")
             return None
 
         # Find the downloaded file

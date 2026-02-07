@@ -18,6 +18,37 @@ logger = logging.getLogger(__name__)
 # Common user agent for requests
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 
+# Error patterns that indicate cookie/authentication issues
+COOKIE_ERROR_PATTERNS = [
+    "sign in to confirm",
+    "confirm you're not a bot",
+    "cookies",
+    "login required",
+    "private video",
+    "age-restricted",
+    "members-only",
+]
+
+
+class CookieExpiredError(Exception):
+    """Raised when YouTube cookies are expired or invalid."""
+
+    pass
+
+
+def is_cookie_error(error_msg: str) -> bool:
+    """Check if an error message indicates a cookie/authentication issue."""
+    error_lower = error_msg.lower()
+    return any(pattern in error_lower for pattern in COOKIE_ERROR_PATTERNS)
+
+
+def get_cookie_error_message() -> str:
+    """Get user-friendly message for cookie errors."""
+    return (
+        "YouTube cookies have expired or are invalid. "
+        "Please update your cookies file (YOUTUBE_COOKIES_FILE)."
+    )
+
 
 class YouTubeProvider:
     """YouTube/YouTube Music playlist/video provider using yt-dlp."""
@@ -247,16 +278,27 @@ class YouTubeProvider:
                 )
 
         except yt_dlp.DownloadError as e:
+            error_msg = str(e)
             logger.error(f"yt-dlp DownloadError fetching track info for {url}: {e}")
+            if is_cookie_error(error_msg):
+                raise CookieExpiredError(get_cookie_error_message()) from e
             return None
         except yt_dlp.ExtractorError as e:
+            error_msg = str(e)
             logger.error(f"yt-dlp ExtractorError fetching track info for {url}: {e}")
+            if is_cookie_error(error_msg):
+                raise CookieExpiredError(get_cookie_error_message()) from e
             return None
+        except CookieExpiredError:
+            raise
         except Exception as e:
+            error_msg = str(e)
             logger.error(
                 f"Unexpected error fetching track info for {url}: "
                 f"{type(e).__name__}: {e}"
             )
+            if is_cookie_error(error_msg):
+                raise CookieExpiredError(get_cookie_error_message()) from e
             return None
 
     def get_playlist(self, url: str) -> tuple[str, list[Track]]:
@@ -338,13 +380,24 @@ class YouTubeProvider:
                 return playlist_name, tracks
 
         except yt_dlp.DownloadError as e:
+            error_msg = str(e)
             logger.error(f"yt-dlp DownloadError fetching playlist for {url}: {e}")
-            raise RuntimeError(f"Failed to fetch playlist: {e}")
+            if is_cookie_error(error_msg):
+                raise CookieExpiredError(get_cookie_error_message()) from e
+            raise RuntimeError(f"Failed to fetch playlist: {e}") from e
         except yt_dlp.ExtractorError as e:
+            error_msg = str(e)
             logger.error(f"yt-dlp ExtractorError fetching playlist for {url}: {e}")
-            raise RuntimeError(f"Failed to fetch playlist: {e}")
+            if is_cookie_error(error_msg):
+                raise CookieExpiredError(get_cookie_error_message()) from e
+            raise RuntimeError(f"Failed to fetch playlist: {e}") from e
+        except CookieExpiredError:
+            raise
         except Exception as e:
+            error_msg = str(e)
             logger.error(
                 f"Unexpected error fetching playlist for {url}: {type(e).__name__}: {e}"
             )
-            raise RuntimeError(f"Failed to fetch playlist: {e}")
+            if is_cookie_error(error_msg):
+                raise CookieExpiredError(get_cookie_error_message()) from e
+            raise RuntimeError(f"Failed to fetch playlist: {e}") from e

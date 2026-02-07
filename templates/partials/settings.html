@@ -1,0 +1,119 @@
+<div class="settings-container">
+  <h3>Settings</h3>
+
+  <div class="setting-item">
+    <div class="setting-header">
+      <h4>YouTube Cookies</h4>
+      <div class="status-indicator {{ 'success' if cookies_present else 'warning' }}">
+        {% if cookies_present %}
+        <span class="icon">✅</span> Cookies Loaded
+        {% else %}
+        <span class="icon">⚠️</span> Cookies Missing
+        {% endif %}
+      </div>
+    </div>
+
+    <p class="description">
+      Upload your <code>cookies.txt</code> file to enable age-restricted and member-only content downloads.
+      You can export this from your browser using extensions like "Get cookies.txt".
+    </p>
+
+    <form
+      hx-post="/api/settings/cookies"
+      hx-encoding="multipart/form-data"
+      hx-target="#content-area"
+      class="upload-form"
+    >
+      <div class="file-input-wrapper">
+        <input type="file" name="cookies_file" accept=".txt" required />
+      </div>
+      <button type="submit" class="btn primary">Upload Cookies</button>
+    </form>
+
+    {% if success_message %}
+    <div class="success-message">
+      {{ success_message }}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<style>
+  .settings-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+
+  .setting-item {
+    background: var(--surface-light);
+    border-radius: 8px;
+    padding: 24px;
+    margin-bottom: 24px;
+    border: 1px solid var(--border-color);
+  }
+
+  .setting-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+
+  .setting-header h4 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: var(--text-primary);
+  }
+
+  .status-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 100px;
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+
+  .status-indicator.success {
+    background: rgba(16, 185, 129, 0.1);
+    color: #10b981;
+  }
+
+  .status-indicator.warning {
+    background: rgba(245, 158, 11, 0.1);
+    color: #f59e0b;
+  }
+
+  .description {
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+    font-size: 0.95rem;
+    line-height: 1.5;
+  }
+
+  .upload-form {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .file-input-wrapper input[type="file"] {
+    background: var(--surface);
+    padding: 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-primary);
+  }
+
+  .success-message {
+    margin-top: 16px;
+    padding: 12px;
+    background: rgba(16, 185, 129, 0.1);
+    border-left: 3px solid #10b981;
+    color: var(--text-primary);
+    border-radius: 4px;
+  }
+</style>

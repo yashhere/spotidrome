@@ -73,6 +73,9 @@ MUSIC_DIR = Path(os.getenv("MUSIC_DIR", "/music"))
 # Ensure directories exist
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
+# Constants
+COOKIES_FILE = DATA_DIR / "cookies.txt"
+
 # Initialize FastAPI
 app = FastAPI(
     title="Spotidrome", description="Music downloader with Spotify/YouTube support"
@@ -85,7 +88,7 @@ worker = JobWorker(
     output_dir=MUSIC_DIR,
     spotify_client_id=os.getenv("SPOTIFY_CLIENT_ID"),
     spotify_client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
-    youtube_cookies=os.getenv("YOUTUBE_COOKIES_FILE"),
+    youtube_cookies=str(COOKIES_FILE),
 )
 
 
@@ -600,6 +603,45 @@ async def update_album_art(
     except Exception as e:
         logger.error(f"Failed to update album art: {e}")
         raise HTTPException(status_code=500, detail="Failed to update album art")
+
+
+@app.get("/api/settings", response_class=HTMLResponse)
+async def get_settings(request: Request):
+    """Get settings page partial."""
+    cookies_present = COOKIES_FILE.exists()
+    return templates.TemplateResponse(
+        "partials/settings.html",
+        {
+            "request": request,
+            "cookies_present": cookies_present,
+        },
+    )
+
+
+@app.post("/api/settings/cookies", response_class=HTMLResponse)
+async def upload_cookies(request: Request, cookies_file: UploadFile = File(...)):
+    """Upload YouTube cookies file."""
+    if not cookies_file.filename.endswith(".txt"):
+        raise HTTPException(status_code=400, detail="Only .txt files are allowed")
+
+    try:
+        content = await cookies_file.read()
+        COOKIES_FILE.write_bytes(content)
+
+        # Update worker settings
+        worker.update_settings(youtube_cookies=str(COOKIES_FILE))
+
+        return templates.TemplateResponse(
+            "partials/settings.html",
+            {
+                "request": request,
+                "cookies_present": True,
+                "success_message": "Cookies uploaded successfully!",
+            },
+        )
+    except Exception as e:
+        logger.error(f"Failed to save cookies file: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save cookies file")
 
 
 @app.get("/health")

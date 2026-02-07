@@ -4,9 +4,10 @@ Provider registry - auto-detects URL type and returns appropriate provider.
 
 from .base import PlaylistProvider, Track
 from .spotify import SpotifyProvider
-from .youtube import YouTubeProvider
+from .youtube import CookieExpiredError, YouTubeProvider
 
 __all__ = [
+    "CookieExpiredError",
     "PlaylistProvider",
     "Track",
     "SpotifyProvider",
