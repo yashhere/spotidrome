@@ -186,8 +186,12 @@ class TrackDownloader:
             "sleep_interval": 1,
             "max_sleep_interval": 3,
             # Retry settings
-            "retries": 3,
-            "fragment_retries": 3,
+            "retries": 5,
+            "fragment_retries": 5,
+            "file_access_retries": 3,
+            # Additional options to help with problematic downloads
+            "nocheckcertificate": True,
+            "continuedl": True,
         }
 
         # Add cookies if configured
