@@ -84,11 +84,13 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 # Initialize worker
+# Only use cookies if the file exists, otherwise download without authentication
+cookies_path = COOKIES_FILE if COOKIES_FILE.exists() else None
 worker = JobWorker(
     output_dir=MUSIC_DIR,
     spotify_client_id=os.getenv("SPOTIFY_CLIENT_ID"),
     spotify_client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
-    youtube_cookies=str(COOKIES_FILE),
+    youtube_cookies=str(cookies_path) if cookies_path else None,
 )
 
 

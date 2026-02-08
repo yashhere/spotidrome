@@ -449,82 +449,28 @@ class TrackDownloader:
 
             return output_path
 
-        # Build search query or use source URL
-        source_url = track.get("source_url")
-        if source_url:
-            search_term = source_url
-            logger.info(f"Downloading from URL: {source_url}")
-        else:
-            search_term = f"ytsearch1:{artist} {track_name}"
-            logger.info(f"Searching YouTube for: {artist} - {track_name}")
+        # Always use YTMusic search to find the video URL
+        # This is more reliable than direct YouTube search
+        self._report_progress(f"Searching YouTube Music: {artist} - {track_name}")
 
-        self._report_progress(f"Starting download: {artist} - {track_name}")
+        try:
+            ytm = YTMusicProvider()
+            yt_url = ytm.search_video(artist, track_name)
 
-        # Try to download using the search term or source URL
-        downloaded_path = self._try_download(
-            artist, track_name, search_term, artist_dir, safe_title, output_path
-        )
+            if not yt_url:
+                logger.warning(f"No YTMusic result found for: {artist} - {track_name}")
+                return None
 
-        # If download failed, try YTMusic search as fallback
-        if not downloaded_path:
-            logger.info(f"Trying YTMusic search fallback for: {artist} - {track_name}")
-            self._report_progress(f"Trying alternative search: {artist} - {track_name}")
-
-            try:
-                ytm = YTMusicProvider()
-                # Search for the track on YouTube Music
-                yt_url = ytm.search_video(artist, track_name)
-
-                if yt_url:
-                    logger.info(f"Found YTMusic URL: {yt_url}")
-                    downloaded_path = self._try_download(
-                        artist, track_name, yt_url, artist_dir, safe_title, output_path
-                    )
-                else:
-                    logger.warning(
-                        f"No YTMusic result found for: {artist} - {track_name}"
-                    )
-            except Exception as e:
-                logger.warning(f"YTMusic fallback failed: {e}")
-
-        # If still failed and we have cookies, try without cookies
-        if not downloaded_path and self.cookies:
-            logger.info(f"Trying download without cookies for: {artist} - {track_name}")
-            self._report_progress(
-                f"Trying without authentication: {artist} - {track_name}"
+            logger.info(f"Found YTMusic URL: {yt_url}")
+            downloaded_path = self._try_download(
+                artist, track_name, yt_url, artist_dir, safe_title, output_path
             )
 
-            # Temporarily disable cookies
-            original_cookies = self.cookies
-            self.cookies = None
-
-            try:
-                downloaded_path = self._try_download(
-                    artist, track_name, search_term, artist_dir, safe_title, output_path
-                )
-
-                # If that failed, also try YTMusic URL without cookies
-                if not downloaded_path:
-                    try:
-                        ytm = YTMusicProvider()
-                        yt_url = ytm.search_video(artist, track_name)
-                        if yt_url:
-                            downloaded_path = self._try_download(
-                                artist,
-                                track_name,
-                                yt_url,
-                                artist_dir,
-                                safe_title,
-                                output_path,
-                            )
-                    except Exception as e:
-                        logger.debug(f"YTMusic without cookies failed: {e}")
-            finally:
-                # Restore cookies
-                self.cookies = original_cookies
-
-        if not downloaded_path:
-            logger.error(f"Failed to download: {artist} - {track_name}")
+            if not downloaded_path:
+                logger.error(f"Failed to download: {artist} - {track_name}")
+                return None
+        except Exception as e:
+            logger.error(f"Error during YTMusic search/download: {e}")
             return None
 
         # Find the downloaded file

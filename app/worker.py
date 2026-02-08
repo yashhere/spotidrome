@@ -95,16 +95,17 @@ class JobWorker:
 
             logger.info(f"Processing job {job_id} for URL: {job.url}")
 
-            # Detect provider
+            # Detect provider - use YTMusic for all YouTube links
             if "spotify.com" in job.url:
                 provider = self.spotify_provider
                 logger.info(f"Using Spotify provider for: {job.url}")
-            elif "music.youtube.com" in job.url:
+            elif (
+                "youtube.com" in job.url
+                or "youtu.be" in job.url
+                or "music.youtube.com" in job.url
+            ):
                 provider = self.ytmusic_provider
                 logger.info(f"Using YouTube Music provider for: {job.url}")
-            elif "youtube.com" in job.url or "youtu.be" in job.url:
-                provider = self.youtube_provider
-                logger.info(f"Using YouTube provider for: {job.url}")
             else:
                 logger.error(f"Unsupported URL: {job.url}")
                 raise ValueError("Unsupported URL")
@@ -138,10 +139,13 @@ class JobWorker:
                 job.progress.total = total
                 job.progress.current_track = status
 
+            # Use cookies only if configured, otherwise download without authentication
             downloader = TrackDownloader(
                 self.output_dir,
                 progress_callback,
-                cookies=self.youtube_provider.cookies,
+                cookies=self.youtube_provider.cookies
+                if self.youtube_provider.cookies
+                else None,
             )
 
             # Download and collect track info
