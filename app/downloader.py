@@ -449,58 +449,46 @@ class TrackDownloader:
 
             return output_path
 
-        # Always use YTMusic search to find the video URL
-        # This is more reliable than direct YouTube search
+        # Try YTMusic search first, then fallback to regular YouTube search
         self._report_progress(f"Searching YouTube Music: {artist} - {track_name}")
 
         try:
             ytm = YTMusicProvider()
             yt_url = ytm.search_video(artist, track_name)
 
-            if not yt_url:
-                logger.warning(f"No YTMusic result found for: {artist} - {track_name}")
-                return None
+            if yt_url:
+                logger.info(f"Found YTMusic URL: {yt_url}")
+                downloaded_path = self._try_download(
+                    artist, track_name, yt_url, artist_dir, safe_title, output_path
+                )
+                if downloaded_path:
+                    return self._finalize_download(
+                        downloaded_path, track, artist, track_name
+                    )
 
-            logger.info(f"Found YTMusic URL: {yt_url}")
-            downloaded_path = self._try_download(
-                artist, track_name, yt_url, artist_dir, safe_title, output_path
-            )
-
-            if not downloaded_path:
-                logger.error(f"Failed to download: {artist} - {track_name}")
-                return None
+            logger.warning(f"No YTMusic result found for: {artist} - {track_name}")
         except Exception as e:
-            logger.error(f"Error during YTMusic search/download: {e}")
-            return None
+            logger.warning(f"YTMusic search failed: {e}")
 
-        # Find the downloaded file
-        logger.debug(f"Looking for downloaded file at: {output_path}")
-        downloaded_path = None
-        if output_path.exists():
-            downloaded_path = output_path
-            logger.debug(f"Found expected file: {output_path}")
-        else:
-            # Try other extensions (yt-dlp might not have converted yet)
-            logger.debug("Expected .mp3 not found, checking other extensions...")
-            for ext in [".mp3", ".m4a", ".opus", ".webm"]:
-                alt_path = artist_dir / f"{safe_title}{ext}"
-                if alt_path.exists():
-                    downloaded_path = alt_path
-                    logger.debug(f"Found alternative file: {alt_path}")
-                    break
+        # Fallback to regular YouTube search
+        logger.info(f"Trying regular YouTube search for: {artist} - {track_name}")
+        self._report_progress(f"Trying YouTube search: {artist} - {track_name}")
+
+        search_term = f"ytsearch1:{artist} {track_name}"
+        downloaded_path = self._try_download(
+            artist, track_name, search_term, artist_dir, safe_title, output_path
+        )
 
         if not downloaded_path:
-            logger.error(f"Could not find downloaded file for: {artist} - {track_name}")
-            # List directory contents for debugging
-            try:
-                dir_contents = list(artist_dir.iterdir())
-                logger.debug(f"Directory contents of {artist_dir}: {dir_contents}")
-            except Exception as e:
-                logger.debug(f"Failed to list directory: {e}")
+            logger.error(f"Failed to download: {artist} - {track_name}")
             return None
 
-        logger.info(f"Downloaded file located: {downloaded_path}")
+        return self._finalize_download(downloaded_path, track, artist, track_name)
 
+    def _finalize_download(
+        self, downloaded_path: Path, track: Track, artist: str, track_name: str
+    ) -> Path | None:
+        """Finalize the download by applying metadata and validating the file."""
         # Check file size to detect failed/empty downloads
         file_size = downloaded_path.stat().st_size
         if file_size < 1024:  # Less than 1KB is definitely wrong
