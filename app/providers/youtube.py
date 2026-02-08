@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import yt_dlp
+from ytmusicapi import YTMusic
 
 from .base import Track
 from .spotify import SpotifyProvider
@@ -94,6 +95,8 @@ class YouTubeProvider:
                 "User-Agent": USER_AGENT,
                 "Referer": "https://www.youtube.com/",
             },
+            # Enable external JS solver for YouTube (required since yt-dlp 2025.11.12)
+            "remote_components": ["ejs:github"],
         }
 
         # Add cookies if configured
@@ -224,6 +227,87 @@ class YouTubeProvider:
             return None
         except Exception:
             return None
+
+    def search_video(self, artist: str, title: str) -> str | None:
+        """Search for a video using YTMusic API and return video URL.
+
+        This is more reliable than yt-dlp search which often gets 403 errors.
+
+        Returns:
+            YouTube video URL or None if not found
+        """
+        try:
+            yt = YTMusic()
+            query = f"{artist} {title}"
+            logger.debug(f"Searching YTMusic for: {query}")
+
+            results = yt.search(query, filter="songs", limit=5)
+
+            for result in results:
+                if result.get("videoId"):
+                    video_id = result["videoId"]
+                    result_title = result.get("title", "")
+                    result_artists = [
+                        a.get("name", "") for a in result.get("artists", [])
+                    ]
+
+                    logger.debug(
+                        f"Found YTMusic result: '{result_title}' by {result_artists}"
+                    )
+
+                    # Validate it's a reasonable match
+                    if self._validate_ytmusic_match(
+                        artist, title, result_artists, result_title
+                    ):
+                        video_url = f"https://www.youtube.com/watch?v={video_id}"
+                        logger.info(f"Found matching video via YTMusic: {video_url}")
+                        return video_url
+
+            logger.debug(f"No good YTMusic match found for: {artist} - {title}")
+            return None
+
+        except Exception as e:
+            logger.debug(f"YTMusic search failed: {e}")
+            return None
+
+    def _validate_ytmusic_match(
+        self,
+        search_artist: str,
+        search_title: str,
+        result_artists: list[str],
+        result_title: str,
+    ) -> bool:
+        """Validate that a YTMusic result matches the search query."""
+        search_artist_words = self._normalize(search_artist)
+        search_title_words = self._normalize(search_title)
+        result_title_words = self._normalize(result_title)
+
+        # Combine all result artist names
+        result_artist_words = set()
+        for artist in result_artists:
+            result_artist_words.update(self._normalize(artist))
+
+        # Check title overlap (at least 50% of search title words should match)
+        if search_title_words:
+            title_overlap = len(search_title_words & result_title_words) / len(
+                search_title_words
+            )
+        else:
+            title_overlap = 0
+
+        # Check artist overlap (at least one word should match)
+        artist_overlap = bool(search_artist_words & result_artist_words)
+
+        # Consider it a match if:
+        # - Title has >50% overlap AND artist has some overlap
+        # - Or title has >80% overlap (very similar title)
+        is_match = (title_overlap >= 0.5 and artist_overlap) or title_overlap >= 0.8
+
+        logger.debug(
+            f"YTMusic match validation: title_overlap={title_overlap:.2f}, artist_overlap={artist_overlap}, is_match={is_match}"
+        )
+
+        return is_match
 
     def get_track(self, url: str) -> Track | None:
         """Fetch single video info from YouTube URL using yt-dlp Python library."""

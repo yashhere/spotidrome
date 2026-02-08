@@ -11,7 +11,9 @@ from typing import Any, Callable
 
 import yt_dlp
 from mutagen.easyid3 import EasyID3
-from mutagen.id3 import APIC, ID3, USLT, Encoding
+from mutagen.id3 import ID3
+from mutagen.id3._frames import APIC, USLT
+from mutagen.id3._specs import Encoding
 from mutagen.id3._util import ID3NoHeaderError
 
 from .lyrics import LyricsProvider
@@ -21,11 +23,29 @@ from .providers.youtube import (
     get_cookie_error_message,
     is_cookie_error,
 )
+from .providers.ytmusic import YTMusicProvider
 
 logger = logging.getLogger(__name__)
 
 # Common user agent for requests
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+
+# Full browser headers to avoid detection
+BROWSER_HEADERS = {
+    "User-Agent": USER_AGENT,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Referer": "https://www.youtube.com/",
+    "Sec-Ch-Ua": '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+    "Sec-Ch-Ua-Mobile": "?0",
+    "Sec-Ch-Ua-Platform": '"Windows"',
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "same-origin",
+    "Sec-Fetch-User": "?1",
+    "Upgrade-Insecure-Requests": "1",
+}
 
 
 class TrackDownloader:
@@ -177,11 +197,10 @@ class TrackDownloader:
             "no_warnings": True,
             "progress_hooks": [self._yt_dlp_progress_hook],
             "postprocessor_hooks": [self._yt_dlp_postprocessor_hook],
-            # Network settings
-            "http_headers": {
-                "User-Agent": USER_AGENT,
-                "Referer": "https://www.youtube.com/",
-            },
+            # Network settings - full browser headers to avoid detection
+            "http_headers": BROWSER_HEADERS,
+            # Enable external JS solver for YouTube (required since yt-dlp 2025.11.12)
+            "remote_components": ["ejs:github"],
             # Rate limiting to avoid being blocked
             "sleep_interval": 1,
             "max_sleep_interval": 3,
@@ -192,6 +211,8 @@ class TrackDownloader:
             # Additional options to help with problematic downloads
             "nocheckcertificate": True,
             "continuedl": True,
+            # Mark of the web to avoid some restrictions
+            "mtime": True,
         }
 
         # Add cookies if configured
@@ -219,72 +240,20 @@ class TrackDownloader:
 
         return opts
 
-    def download_track(self, track: Track) -> Path | None:
-        """Download a single track using yt-dlp Python library.
+    def _try_download(
+        self,
+        artist: str,
+        track_name: str,
+        search_term: str,
+        artist_dir: Path,
+        safe_title: str,
+        output_path: Path,
+    ) -> Path | None:
+        """Attempt to download a track with the given search term.
 
         Returns:
             Path to downloaded file, or None if failed
         """
-        track_name = track.get("name", "")
-        if not track_name:
-            logger.warning("Skipping track with no name")
-            return None
-
-        artist = track["artists"][0] if track.get("artists") else "Unknown"
-
-        safe_artist = self._sanitize_filename(artist)
-        safe_title = self._sanitize_filename(track_name)
-
-        # Store current track info for progress hooks
-        self._current_track_info = {"artist": artist, "title": track_name}
-
-        artist_dir = self.output_dir / safe_artist
-        artist_dir.mkdir(parents=True, exist_ok=True)
-
-        output_path = artist_dir / f"{safe_title}.mp3"
-
-        # Check if file already exists
-        if output_path.exists():
-            # Check for missing metadata and update if needed
-            missing = self._check_missing_metadata(output_path)
-
-            if any(missing.values()):
-                missing_items = [k for k, v in missing.items() if v]
-                logger.info(
-                    f"Updating metadata ({', '.join(missing_items)}): {safe_artist}/{safe_title}.mp3"
-                )
-                self._report_progress(
-                    f"Updating metadata: {safe_artist}/{safe_title}.mp3"
-                )
-
-                # Update album art if missing (via _tag_file which handles album art)
-                if missing.get("album_art"):
-                    self._tag_file(output_path, track)
-
-                # Update lyrics if missing (embedded or .lrc)
-                if missing.get("lyrics") or missing.get("lrc_file"):
-                    self._fetch_lyrics(output_path, track)
-
-                logger.info(f"Updated metadata for: {safe_artist}/{safe_title}.mp3")
-            else:
-                logger.info(
-                    f"Already exists (complete): {safe_artist}/{safe_title}.mp3"
-                )
-                self._report_progress(f"Already exists: {safe_artist}/{safe_title}.mp3")
-
-            return output_path
-
-        # Build search query or use source URL
-        source_url = track.get("source_url")
-        if source_url:
-            search_term = source_url
-            logger.info(f"Downloading from URL: {source_url}")
-        else:
-            search_term = f"ytsearch1:{artist} {track_name}"
-            logger.info(f"Searching YouTube for: {artist} - {track_name}")
-
-        self._report_progress(f"Starting download: {artist} - {track_name}")
-
         # Build yt-dlp options
         output_template = str(artist_dir / f"{safe_title}.%(ext)s")
         ydl_opts = self._build_yt_dlp_opts(output_template)
@@ -357,11 +326,10 @@ class TrackDownloader:
             if is_cookie_error(error_msg):
                 raise CookieExpiredError(get_cookie_error_message()) from e
             if "HTTP Error 403" in error_msg:
-                raise CookieExpiredError(
-                    "YouTube refused the connection (403 Forbidden). "
-                    "This usually means your cookies are invalid or your IP is blocked. "
-                    "Try updating your cookies file."
-                ) from e
+                logger.warning(
+                    f"Got 403 error for {artist} - {track_name}, will try fallback"
+                )
+                return None
             self._report_progress(f"Failed: {error_msg[:100]}")
             return None
         except yt_dlp.ExtractorError as e:
@@ -372,11 +340,10 @@ class TrackDownloader:
             if is_cookie_error(error_msg):
                 raise CookieExpiredError(get_cookie_error_message()) from e
             if "HTTP Error 403" in error_msg:
-                raise CookieExpiredError(
-                    "YouTube refused the connection (403 Forbidden). "
-                    "This usually means your cookies are invalid or your IP is blocked. "
-                    "Try updating your cookies file."
-                ) from e
+                logger.warning(
+                    f"Got 403 error for {artist} - {track_name}, will try fallback"
+                )
+                return None
             self._report_progress(f"Failed: {error_msg[:100]}")
             return None
         except yt_dlp.PostProcessingError as e:
@@ -425,7 +392,184 @@ class TrackDownloader:
                 logger.debug(f"Failed to list directory: {e}")
             return None
 
+        return downloaded_path
+
+    def download_track(self, track: Track) -> Path | None:
+        """Download a single track using yt-dlp Python library.
+
+        Returns:
+            Path to downloaded file, or None if failed
+        """
+        track_name = track.get("name", "")
+        if not track_name:
+            logger.warning("Skipping track with no name")
+            return None
+
+        artist = track["artists"][0] if track.get("artists") else "Unknown"
+
+        safe_artist = self._sanitize_filename(artist)
+        safe_title = self._sanitize_filename(track_name)
+
+        # Store current track info for progress hooks
+        self._current_track_info = {"artist": artist, "title": track_name}
+
+        artist_dir = self.output_dir / safe_artist
+        artist_dir.mkdir(parents=True, exist_ok=True)
+
+        output_path = artist_dir / f"{safe_title}.mp3"
+
+        # Check if file already exists
+        if output_path.exists():
+            # Check for missing metadata and update if needed
+            missing = self._check_missing_metadata(output_path)
+
+            if any(missing.values()):
+                missing_items = [k for k, v in missing.items() if v]
+                logger.info(
+                    f"Updating metadata ({', '.join(missing_items)}): {safe_artist}/{safe_title}.mp3"
+                )
+                self._report_progress(
+                    f"Updating metadata: {safe_artist}/{safe_title}.mp3"
+                )
+
+                # Update album art if missing (via _tag_file which handles album art)
+                if missing.get("album_art"):
+                    self._tag_file(output_path, track)
+
+                # Update lyrics if missing (embedded or .lrc)
+                if missing.get("lyrics") or missing.get("lrc_file"):
+                    self._fetch_lyrics(output_path, track)
+
+                logger.info(f"Updated metadata for: {safe_artist}/{safe_title}.mp3")
+            else:
+                logger.info(
+                    f"Already exists (complete): {safe_artist}/{safe_title}.mp3"
+                )
+                self._report_progress(f"Already exists: {safe_artist}/{safe_title}.mp3")
+
+            return output_path
+
+        # Build search query or use source URL
+        source_url = track.get("source_url")
+        if source_url:
+            search_term = source_url
+            logger.info(f"Downloading from URL: {source_url}")
+        else:
+            search_term = f"ytsearch1:{artist} {track_name}"
+            logger.info(f"Searching YouTube for: {artist} - {track_name}")
+
+        self._report_progress(f"Starting download: {artist} - {track_name}")
+
+        # Try to download using the search term or source URL
+        downloaded_path = self._try_download(
+            artist, track_name, search_term, artist_dir, safe_title, output_path
+        )
+
+        # If download failed, try YTMusic search as fallback
+        if not downloaded_path:
+            logger.info(f"Trying YTMusic search fallback for: {artist} - {track_name}")
+            self._report_progress(f"Trying alternative search: {artist} - {track_name}")
+
+            try:
+                ytm = YTMusicProvider()
+                # Search for the track on YouTube Music
+                yt_url = ytm.search_video(artist, track_name)
+
+                if yt_url:
+                    logger.info(f"Found YTMusic URL: {yt_url}")
+                    downloaded_path = self._try_download(
+                        artist, track_name, yt_url, artist_dir, safe_title, output_path
+                    )
+                else:
+                    logger.warning(
+                        f"No YTMusic result found for: {artist} - {track_name}"
+                    )
+            except Exception as e:
+                logger.warning(f"YTMusic fallback failed: {e}")
+
+        # If still failed and we have cookies, try without cookies
+        if not downloaded_path and self.cookies:
+            logger.info(f"Trying download without cookies for: {artist} - {track_name}")
+            self._report_progress(
+                f"Trying without authentication: {artist} - {track_name}"
+            )
+
+            # Temporarily disable cookies
+            original_cookies = self.cookies
+            self.cookies = None
+
+            try:
+                downloaded_path = self._try_download(
+                    artist, track_name, search_term, artist_dir, safe_title, output_path
+                )
+
+                # If that failed, also try YTMusic URL without cookies
+                if not downloaded_path:
+                    try:
+                        ytm = YTMusicProvider()
+                        yt_url = ytm.search_video(artist, track_name)
+                        if yt_url:
+                            downloaded_path = self._try_download(
+                                artist,
+                                track_name,
+                                yt_url,
+                                artist_dir,
+                                safe_title,
+                                output_path,
+                            )
+                    except Exception as e:
+                        logger.debug(f"YTMusic without cookies failed: {e}")
+            finally:
+                # Restore cookies
+                self.cookies = original_cookies
+
+        if not downloaded_path:
+            logger.error(f"Failed to download: {artist} - {track_name}")
+            return None
+
+        # Find the downloaded file
+        logger.debug(f"Looking for downloaded file at: {output_path}")
+        downloaded_path = None
+        if output_path.exists():
+            downloaded_path = output_path
+            logger.debug(f"Found expected file: {output_path}")
+        else:
+            # Try other extensions (yt-dlp might not have converted yet)
+            logger.debug("Expected .mp3 not found, checking other extensions...")
+            for ext in [".mp3", ".m4a", ".opus", ".webm"]:
+                alt_path = artist_dir / f"{safe_title}{ext}"
+                if alt_path.exists():
+                    downloaded_path = alt_path
+                    logger.debug(f"Found alternative file: {alt_path}")
+                    break
+
+        if not downloaded_path:
+            logger.error(f"Could not find downloaded file for: {artist} - {track_name}")
+            # List directory contents for debugging
+            try:
+                dir_contents = list(artist_dir.iterdir())
+                logger.debug(f"Directory contents of {artist_dir}: {dir_contents}")
+            except Exception as e:
+                logger.debug(f"Failed to list directory: {e}")
+            return None
+
         logger.info(f"Downloaded file located: {downloaded_path}")
+
+        # Check file size to detect failed/empty downloads
+        file_size = downloaded_path.stat().st_size
+        if file_size < 1024:  # Less than 1KB is definitely wrong
+            logger.error(
+                f"Downloaded file is too small ({file_size} bytes), likely a failed download: {downloaded_path}"
+            )
+            # Clean up the invalid file
+            try:
+                downloaded_path.unlink()
+                logger.debug(f"Removed invalid file: {downloaded_path}")
+            except Exception as e:
+                logger.warning(f"Failed to remove invalid file: {e}")
+            return None
+
+        logger.info(f"Downloaded file size: {file_size / 1024 / 1024:.2f} MB")
 
         # Apply metadata and album art
         logger.debug(f"Applying metadata tags to: {downloaded_path}")

@@ -11,7 +11,9 @@ from pathlib import Path
 
 from langdetect import LangDetectException, detect
 from mutagen.easyid3 import EasyID3
-from mutagen.id3 import ID3, SYLT, USLT, Encoding
+from mutagen.id3 import ID3
+from mutagen.id3._frames import SYLT, USLT
+from mutagen.id3._specs import Encoding
 from mutagen.id3._util import ID3NoHeaderError
 
 logger = logging.getLogger(__name__)
@@ -53,7 +55,8 @@ class LyricsProvider:
         # Try Musixmatch first (best coverage, has synced lyrics)
         synced, plain = self._fetch_musixmatch(title, artist)
         if synced or plain:
-            if self._is_allowed_language(plain or synced):
+            lyrics_to_check = plain or synced or ""
+            if self._is_allowed_language(lyrics_to_check):
                 logger.debug(
                     f"Found lyrics via Musixmatch (synced={bool(synced)}, plain={bool(plain)})"
                 )
@@ -62,7 +65,8 @@ class LyricsProvider:
         # Try LRCLIB (has synced lyrics)
         synced, plain = self._fetch_lrclib(title, artist)
         if synced or plain:
-            if self._is_allowed_language(plain or synced):
+            lyrics_to_check = plain or synced or ""
+            if self._is_allowed_language(lyrics_to_check):
                 logger.debug(
                     f"Found lyrics via LRCLIB (synced={bool(synced)}, plain={bool(plain)})"
                 )
@@ -78,8 +82,11 @@ class LyricsProvider:
         logger.debug("No lyrics found from any source (or filtered by language)")
         return None, None
 
-    def _is_allowed_language(self, lyrics: str) -> bool:
+    def _is_allowed_language(self, lyrics: str | None) -> bool:
         """Check if lyrics are in an allowed language."""
+        if not lyrics:
+            return True
+
         # Strip LRC timestamps if present
         clean_text = re.sub(r"\[\d{2}:\d{2}[.:]\d{2,3}\]", "", lyrics)
         detected_lang = detect_language(clean_text)

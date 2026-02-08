@@ -110,7 +110,7 @@ class JobWorker:
                 raise ValueError("Unsupported URL")
 
             # Check if it's a single track or playlist
-            is_single = any(x in job.url for x in ["/track/", "/watch?v="])
+            is_single = any(x in job.url for x in ["/track/", "/watch?v=", "youtu.be/"])
             logger.debug(f"URL type: {'single track' if is_single else 'playlist'}")
 
             if is_single:

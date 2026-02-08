@@ -197,3 +197,54 @@ class YTMusicProvider:
         except Exception as e:
             logger.error(f"Error fetching playlist from YouTube Music: {e}")
             return "Unknown Playlist", []
+
+    def search_video(self, artist: str, title: str) -> str | None:
+        """Search for a video using YTMusic API and return video URL.
+
+        This is more reliable than yt-dlp search which often gets 403 errors.
+
+        Args:
+            artist: Artist name
+            title: Track title
+
+        Returns:
+            YouTube video URL or None if not found
+        """
+        try:
+            query = f"{artist} {title}"
+            logger.debug(f"Searching YTMusic for: {query}")
+
+            results = self.yt.search(query, filter="songs", limit=5)
+
+            for result in results:
+                if result.get("videoId"):
+                    video_id = result["videoId"]
+                    result_title = result.get("title", "")
+                    result_artists = [
+                        a.get("name", "") for a in result.get("artists", [])
+                    ]
+
+                    logger.debug(
+                        f"Found YTMusic result: '{result_title}' by {result_artists}"
+                    )
+
+                    # Simple validation - just check if artist name appears in result
+                    artist_match = any(
+                        artist.lower() in ra.lower() for ra in result_artists
+                    )
+                    title_match = (
+                        title.lower() in result_title.lower()
+                        or result_title.lower() in title.lower()
+                    )
+
+                    if artist_match or title_match:
+                        video_url = f"https://www.youtube.com/watch?v={video_id}"
+                        logger.info(f"Found matching video via YTMusic: {video_url}")
+                        return video_url
+
+            logger.debug(f"No good YTMusic match found for: {artist} - {title}")
+            return None
+
+        except Exception as e:
+            logger.debug(f"YTMusic search failed: {e}")
+            return None
