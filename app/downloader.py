@@ -10,11 +10,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import yt_dlp
-from mutagen.easyid3 import EasyID3
-from mutagen.id3 import ID3
-from mutagen.id3._frames import APIC, USLT
-from mutagen.id3._specs import Encoding
-from mutagen.id3._util import ID3NoHeaderError
+from mediafile import Image, ImageType, MediaFile
 
 from .lyrics import LyricsProvider
 from .providers.base import Track
@@ -24,6 +20,7 @@ from .providers.youtube import (
     is_cookie_error,
 )
 from .providers.ytmusic import YTMusicProvider
+from .tagging_utils import format_display_artist, normalize_artists
 
 logger = logging.getLogger(__name__)
 
@@ -145,18 +142,14 @@ class TrackDownloader:
         missing = {"album_art": False, "lyrics": False, "lrc_file": False}
 
         try:
-            try:
-                audio = ID3(file_path)
-            except ID3NoHeaderError:
-                # No ID3 header means everything is missing
-                return {"album_art": True, "lyrics": True, "lrc_file": True}
+            mf = MediaFile(file_path)
 
-            # Check for album art (APIC frame)
-            if not audio.getall("APIC"):
+            # Check for album art
+            if not mf.images:
                 missing["album_art"] = True
 
-            # Check for embedded lyrics (USLT frame)
-            if not audio.getall("USLT"):
+            # Check for embedded lyrics
+            if not mf.lyrics:
                 missing["lyrics"] = True
 
             # Check for .lrc file
@@ -166,7 +159,8 @@ class TrackDownloader:
 
         except Exception as e:
             logger.warning(f"Failed to check metadata: {e}")
-            # If we can't read, assume nothing is missing to avoid breaking things
+            # If we can't read, assume everything is missing
+            return {"album_art": True, "lyrics": True, "lrc_file": True}
 
         return missing
 
@@ -517,65 +511,53 @@ class TrackDownloader:
         return downloaded_path
 
     def _tag_file(self, file_path: Path, track: Track) -> None:
-        """Tag audio file with metadata and album art."""
+        """Tag audio file with metadata and album art using MediaFile."""
 
-        artist = (
-            track.get("artists", ["Unknown"])[0] if track.get("artists") else "Unknown"
-        )
+        artists = normalize_artists(track.get("artists"))
+        if not artists:
+            artists = ["Unknown"]
+
+        artist = artists[0]
         title = track.get("name", "")
 
         try:
-            try:
-                audio = EasyID3(file_path)
-            except ID3NoHeaderError:
-                audio_id3 = ID3()
-                audio_id3.save(file_path)
-                audio = EasyID3(file_path)
+            mf = MediaFile(file_path)
 
-            audio["title"] = title
-            # Join multiple artists with comma (Navidrome default separator)
-            artists = track.get("artists", ["Unknown"])
-            if isinstance(artists, list) and len(artists) > 1:
-                audio["artist"] = ", ".join(artists)
-            else:
-                audio["artist"] = artists[0] if isinstance(artists, list) else artists
-            audio["album"] = track.get("album", "") or "Unknown Album"
+            mf.title = title
+            display_artist = format_display_artist(artists)
+            mf.artist = display_artist
+            # MediaFile handles multi-valued artists automatically
+            # It writes proper multi-valued TPE1 frames for ID3v2.4
+            mf.artists = artists
+            mf.album = track.get("album", "") or "Unknown Album"
 
             if track.get("track_number"):
-                audio["tracknumber"] = str(track["track_number"])
+                mf.track = track["track_number"]
 
             if track.get("release_date"):
-                year = track["release_date"].split("-")[0]
-                audio["date"] = year
+                mf.year = int(track["release_date"].split("-")[0])
 
             if track.get("genre"):
-                audio["genre"] = track["genre"]
+                mf.genre = track["genre"]
 
-            audio.save()
+            mf.save()
             logger.debug(f"Tagged: {artist} - {title}")
 
             # Embed album art from Spotify if available
             cover_url = track.get("cover_url")
             if cover_url:
                 try:
-                    audio_id3 = ID3(file_path)
                     req = urllib.request.Request(
                         cover_url, headers={"User-Agent": "Mozilla/5.0"}
                     )
                     with urllib.request.urlopen(req, timeout=10) as response:
                         cover_data = response.read()
 
-                    audio_id3.delall("APIC")
-                    audio_id3.add(
-                        APIC(
-                            encoding=3,
-                            mime="image/jpeg",
-                            type=3,
-                            desc="Cover",
-                            data=cover_data,
-                        )
-                    )
-                    audio_id3.save()
+                    mf = MediaFile(file_path)
+                    mf.images = [
+                        Image(data=cover_data, desc="Cover", type=ImageType.front)
+                    ]
+                    mf.save()
                     logger.debug(f"Embedded album art for: {artist} - {title}")
                 except Exception as e:
                     logger.warning(f"Failed to embed album art: {e}")
@@ -602,24 +584,11 @@ class TrackDownloader:
             logger.info(f"Saved synced lyrics: {lrc_path.name}")
 
         if plain_lyrics:
-            # Embed plain lyrics in the file
+            # Embed plain lyrics using MediaFile
             try:
-                try:
-                    audio = ID3(file_path)
-                except ID3NoHeaderError:
-                    audio = ID3()
-                    audio.save(file_path)
-                    audio = ID3(file_path)
-
-                # Remove existing lyrics
-                audio.delall("USLT")
-
-                # Add plain lyrics
-
-                audio.add(
-                    USLT(encoding=Encoding.UTF8, lang="xxx", desc="", text=plain_lyrics)
-                )
-                audio.save()
+                mf = MediaFile(file_path)
+                mf.lyrics = plain_lyrics
+                mf.save()
                 logger.debug(f"Embedded plain lyrics for: {artist} - {title}")
             except Exception as e:
                 logger.warning(f"Failed to embed lyrics: {e}")

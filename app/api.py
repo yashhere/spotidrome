@@ -25,11 +25,10 @@ from fastapi import (  # noqa: E402
 from fastapi.responses import FileResponse, HTMLResponse, Response  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 from fastapi.templating import Jinja2Templates  # noqa: E402
-from mutagen.easyid3 import EasyID3  # noqa: E402
-from mutagen.id3 import APIC, ID3  # noqa: E402
-from mutagen.id3._util import ID3NoHeaderError  # noqa: E402
+from mediafile import Image, ImageType, MediaFile  # noqa: E402
 
 from .lyrics import embed_lyrics_in_file, update_metadata_in_file  # noqa: E402
+from .tagging_utils import normalize_artists  # noqa: E402
 from .worker import JobWorker  # noqa: E402
 
 # Configure logging
@@ -193,13 +192,17 @@ async def get_library(request: Request, q: str | None = None):
                 "year": "",
             }
 
-            # Try to read ID3 metadata
+            # Try to read metadata
             try:
-                audio = EasyID3(mp3_file)
-                track["title"] = audio.get("title", [track["title"]])[0]
-                track["artist"] = audio.get("artist", [track["artist"]])[0]
-                track["album"] = audio.get("album", [""])[0]
-                track["year"] = audio.get("date", [""])[0]
+                mf = MediaFile(mp3_file)
+                if mf.title:
+                    track["title"] = str(mf.title)
+                if mf.artist:
+                    track["artist"] = str(mf.artist)
+                if mf.album:
+                    track["album"] = str(mf.album)
+                if mf.year is not None:
+                    track["year"] = str(mf.year)
             except Exception:
                 pass
 
@@ -236,11 +239,9 @@ def get_all_genres():
     if MUSIC_DIR.exists():
         for mp3_file in MUSIC_DIR.rglob("*.mp3"):
             try:
-                audio = EasyID3(mp3_file)
-                genre_list = audio.get("genre", [])
-                for g in genre_list:
-                    if g.strip():
-                        genres.add(g.strip())
+                mf = MediaFile(mp3_file)
+                if mf.genre:
+                    genres.add(str(mf.genre).strip())
             except Exception:
                 pass
 
@@ -315,10 +316,12 @@ async def get_album_art(file_path: str):
         raise HTTPException(status_code=404, detail="File not found")
 
     try:
-        audio = ID3(track_path)
-        apic = audio.getall("APIC")
-        if apic:
-            return Response(content=apic[0].data, media_type=apic[0].mime)
+        mf = MediaFile(track_path)
+        if mf.images:
+            image = mf.images[0]
+            if isinstance(image, Image):
+                media_type = image.mime_type or "image/jpeg"
+                return Response(content=image.data, media_type=media_type)
     except Exception:
         pass
 
@@ -346,13 +349,13 @@ async def get_lyrics_editor(request: Request, file_path: str):
     }
 
     try:
-        audio = EasyID3(track_path)
-        metadata["title"] = audio.get("title", [""])[0]
-        metadata["artist"] = audio.get("artist", [""])[0]
-        metadata["album"] = audio.get("album", [""])[0]
-        metadata["date"] = audio.get("date", [""])[0]
-        metadata["track_number"] = audio.get("tracknumber", [""])[0]
-        metadata["genre"] = audio.get("genre", [""])[0]
+        mf = MediaFile(track_path)
+        metadata["title"] = str(mf.title) if mf.title else ""
+        metadata["artist"] = str(mf.artist) if mf.artist else ""
+        metadata["album"] = str(mf.album) if mf.album else ""
+        metadata["date"] = str(mf.year) if mf.year is not None else ""
+        metadata["track_number"] = str(mf.track) if mf.track is not None else ""
+        metadata["genre"] = str(mf.genre) if mf.genre else ""
     except Exception:
         pass
 
@@ -367,22 +370,19 @@ async def get_lyrics_editor(request: Request, file_path: str):
         except Exception:
             pass
 
-    # Fallback to embedded USLT
+    # Fallback to embedded lyrics
     if not lyrics:
         try:
-            audio = ID3(track_path)
-            uslt = audio.getall("USLT")
-            if uslt:
-                lyrics = uslt[0].text
+            mf = MediaFile(track_path)
+            lyrics = mf.lyrics or ""
         except Exception:
             pass
 
     # Check for album art
     has_art = False
     try:
-        audio = ID3(track_path)
-        if audio.getall("APIC"):
-            has_art = True
+        mf = MediaFile(track_path)
+        has_art = bool(mf.images)
     except Exception:
         pass
 
@@ -435,9 +435,9 @@ async def update_track(
     old_artist = None
     old_title = None
     try:
-        audio = EasyID3(track_path)
-        old_artist = audio.get("artist", [""])[0]
-        old_title = audio.get("title", [""])[0]
+        mf = MediaFile(track_path)
+        old_artist = mf.artist or ""
+        old_title = mf.title or ""
     except Exception:
         pass
 
@@ -479,7 +479,8 @@ async def update_track(
         # Determine new directory (use first artist only if multiple artists)
         if artist:
             # Use only the first artist for the directory name
-            first_artist = artist.split(",")[0].strip()
+            artist_list = normalize_artists(artist)
+            first_artist = artist_list[0] if artist_list else artist
             safe_artist = "".join(
                 c for c in first_artist if c.isalnum() or c in (" ", "_", "-")
             ).strip()
@@ -541,10 +542,9 @@ async def update_track(
                 lrc_path.unlink()
             # Remove embedded lyrics
             try:
-                audio = ID3(track_path)
-                audio.delall("USLT")
-                audio.delall("SYLT")
-                audio.save()
+                mf = MediaFile(track_path)
+                mf.lyrics = None
+                mf.save()
             except Exception:
                 pass
         else:
@@ -586,12 +586,10 @@ async def update_album_art(
 
     # Get image data from either file upload or URL
     art_data = None
-    mime_type = "image/jpeg"
 
     if art:
         # File upload
         art_data = await art.read()
-        mime_type = art.content_type or "image/jpeg"
     elif art_url:
         # Download from URL
         try:
@@ -599,7 +597,6 @@ async def update_album_art(
                 response = await client.get(art_url)
                 response.raise_for_status()
                 art_data = response.content
-                mime_type = response.headers.get("content-type", "image/jpeg")
         except Exception as e:
             logger.error(f"Failed to download image from URL: {e}")
             raise HTTPException(
@@ -612,27 +609,9 @@ async def update_album_art(
         raise HTTPException(status_code=400, detail="No image data")
 
     try:
-        try:
-            audio = ID3(track_path)
-        except ID3NoHeaderError:
-            audio = ID3()
-            audio.save(track_path)
-            audio = ID3(track_path)
-
-        # Remove existing album art
-        audio.delall("APIC")
-
-        # Add new album art
-        audio.add(
-            APIC(
-                encoding=3,
-                mime=mime_type,
-                type=3,  # Cover (front)
-                desc="Cover",
-                data=art_data,
-            )
-        )
-        audio.save()
+        mf = MediaFile(track_path)
+        mf.images = [Image(data=art_data, desc="Cover", type=ImageType.front)]
+        mf.save()
         logger.info(f"Updated album art for: {track_path}")
         return {"status": "ok", "message": "Album art updated"}
     except Exception as e:
@@ -656,7 +635,7 @@ async def get_settings(request: Request):
 @app.post("/api/settings/cookies", response_class=HTMLResponse)
 async def upload_cookies(request: Request, cookies_file: UploadFile = File(...)):
     """Upload YouTube cookies file."""
-    if not cookies_file.filename.endswith(".txt"):
+    if not cookies_file.filename or not cookies_file.filename.endswith(".txt"):
         raise HTTPException(status_code=400, detail="Only .txt files are allowed")
 
     try:
