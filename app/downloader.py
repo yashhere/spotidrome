@@ -533,10 +533,10 @@ class TrackDownloader:
                 audio = EasyID3(file_path)
 
             audio["title"] = title
-            # Join multiple artists with semicolon for better compatibility
+            # Join multiple artists with comma (Navidrome default separator)
             artists = track.get("artists", ["Unknown"])
             if isinstance(artists, list) and len(artists) > 1:
-                audio["artist"] = "; ".join(artists)
+                audio["artist"] = ", ".join(artists)
             else:
                 audio["artist"] = artists[0] if isinstance(artists, list) else artists
             audio["album"] = track.get("album", "") or "Unknown Album"

@@ -460,10 +460,12 @@ async def update_track(
     title_changed = title and old_title and title != old_title
 
     if artist_changed or title_changed:
-        # Determine new directory (use new artist if changed, otherwise keep current)
+        # Determine new directory (use first artist only if multiple artists)
         if artist_changed:
+            # Use only the first artist for the directory name
+            first_artist = artist.split(",")[0].strip()
             safe_artist = "".join(
-                c for c in artist if c.isalnum() or c in (" ", "_", "-")
+                c for c in first_artist if c.isalnum() or c in (" ", "_", "-")
             ).strip()
             safe_artist = safe_artist.replace(" ", "_")
             new_dir = MUSIC_DIR / safe_artist
