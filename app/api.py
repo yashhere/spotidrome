@@ -454,14 +454,30 @@ async def update_track(
         },
     )
 
-    # Reorganize file if artist or title changed
+    # Reorganize file if artist or title changed, or if filename doesn't match
     new_path = track_path
     artist_changed = artist and old_artist and artist != old_artist
     title_changed = title and old_title and title != old_title
 
-    if artist_changed or title_changed:
+    # Calculate expected filename from current title
+    expected_filename = None
+    if title:
+        safe_title = "".join(
+            c for c in title if c.isalnum() or c in (" ", "_", "-")
+        ).strip()
+        safe_title = safe_title.replace(" ", "_")
+        expected_filename = f"{safe_title}.mp3"
+
+    # Check if filename needs updating (even if title hasn't changed)
+    filename_mismatch = expected_filename and track_path.name != expected_filename
+
+    if artist_changed or title_changed or filename_mismatch:
+        logger.info(
+            f"Reorganizing file: artist_changed={artist_changed}, title_changed={title_changed}, filename_mismatch={filename_mismatch}"
+        )
+
         # Determine new directory (use first artist only if multiple artists)
-        if artist_changed:
+        if artist:
             # Use only the first artist for the directory name
             first_artist = artist.split(",")[0].strip()
             safe_artist = "".join(
@@ -474,13 +490,9 @@ async def update_track(
 
         new_dir.mkdir(parents=True, exist_ok=True)
 
-        # Determine new filename (use new title if changed, otherwise keep current)
-        if title_changed:
-            safe_title = "".join(
-                c for c in title if c.isalnum() or c in (" ", "_", "-")
-            ).strip()
-            safe_title = safe_title.replace(" ", "_")
-            new_filename = f"{safe_title}.mp3"
+        # Determine new filename
+        if expected_filename:
+            new_filename = expected_filename
         else:
             new_filename = track_path.name
 
@@ -513,6 +525,10 @@ async def update_track(
                 logger.error(f"Failed to move file: {e}")
                 # Revert track_path if move failed
                 new_path = track_path
+        else:
+            logger.warning(
+                f"Cannot move file: destination already exists at {new_path}"
+            )
 
     # Update lyrics if provided
     if lyrics is not None:
