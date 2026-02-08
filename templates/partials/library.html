@@ -10,11 +10,25 @@
         name="q"
         class="search-input"
         placeholder="Search library..."
+        value="{{ q or '' }}"
         hx-get="/api/library"
         hx-trigger="keyup changed delay:300ms, search"
         hx-target="#library-list-container"
         autocomplete="off"
       />
+      <button
+        class="btn-danger"
+        type="button"
+        title="Delete selected tracks"
+        hx-post="/api/tracks/delete"
+        hx-target="#content-area"
+        hx-swap="innerHTML"
+        hx-confirm="Delete selected tracks? This cannot be undone."
+        hx-include=".search-input, .delete-checkbox:checked"
+        disabled
+      >
+        Delete Selected
+      </button>
     </div>
   </div>
 
@@ -22,3 +36,27 @@
     {% include "partials/library_list.html" %}
   </div>
 </div>
+
+<script>
+  function updateDeleteButtonState() {
+    const button = document.querySelector(".btn-danger");
+    const checkboxes = document.querySelectorAll(".delete-checkbox");
+    if (!button) return;
+    const anyChecked = Array.from(checkboxes).some((cb) => cb.checked);
+    button.disabled = !anyChecked;
+  }
+
+  document.addEventListener("change", function (event) {
+    if (event.target.matches(".delete-checkbox")) {
+      updateDeleteButtonState();
+    }
+  });
+
+  document.addEventListener("htmx:afterSwap", function (event) {
+    if (event.target && event.target.id === "library-list-container") {
+      updateDeleteButtonState();
+    }
+  });
+
+  document.addEventListener("DOMContentLoaded", updateDeleteButtonState);
+</script>

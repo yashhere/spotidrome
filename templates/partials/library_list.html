@@ -3,6 +3,7 @@
   <table class="library-table">
     <thead>
       <tr>
+        <th class="track-select"></th>
         <th>Title</th>
         <th>Artist</th>
         <th>Album</th>
@@ -13,6 +14,14 @@
     <tbody>
       {% for track in tracks %}
       <tr>
+        <td class="track-select">
+          <input
+            class="delete-checkbox"
+            type="checkbox"
+            name="file_paths"
+            value="{{ track.file_path }}"
+          />
+        </td>
         <td class="track-title">{{ track.title }}</td>
         <td>{{ track.artist }}</td>
         <td>{{ track.album }}</td>
@@ -20,6 +29,7 @@
         <td class="track-actions">
           <button
             class="btn-edit"
+            type="button"
             hx-get="/api/tracks/edit?file_path={{ track.file_path | urlencode }}"
             hx-target="body"
             hx-swap="beforeend"

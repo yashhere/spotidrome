@@ -177,9 +177,8 @@ async def cancel_job(request: Request, job_id: str):
 async def get_library(request: Request, q: str | None = None):
     """Get library browser partial."""
     tracks = []
+    search_query = q.lower().strip() if q else ""
     if MUSIC_DIR.exists():
-        search_query = q.lower().strip() if q else ""
-
         for mp3_file in sorted(MUSIC_DIR.rglob("*.mp3")):
             track = {
                 "file_path": str(mp3_file.relative_to(MUSIC_DIR)),
@@ -229,6 +228,7 @@ async def get_library(request: Request, q: str | None = None):
             "request": request,
             "tracks": tracks,
             "total_tracks": len(tracks),
+            "q": search_query,
         },
     )
 
@@ -570,6 +570,51 @@ async def update_track(
             embed_lyrics_in_file(track_path, plain_lyrics, synced_lyrics)
 
     return {"status": "ok", "message": "Track updated"}
+
+
+@app.post("/api/tracks/delete", response_class=HTMLResponse)
+async def delete_tracks(
+    request: Request,
+    file_paths: list[str] | None = Form(None),
+    q: str | None = Form(None),
+):
+    """Delete one or more tracks from the library."""
+    if not file_paths:
+        return await get_library(request, q=q)
+
+    deleted = 0
+    for file_path in file_paths:
+        track_path = Path(file_path)
+        if not track_path.is_absolute():
+            track_path = MUSIC_DIR / track_path
+
+        try:
+            track_path = track_path.resolve()
+            if not str(track_path).startswith(str(MUSIC_DIR.resolve())):
+                logger.warning(f"Invalid delete path: {track_path}")
+                continue
+        except Exception:
+            logger.warning(f"Invalid delete path: {track_path}")
+            continue
+
+        if not track_path.exists():
+            continue
+
+        try:
+            lrc_path = track_path.with_suffix(".lrc")
+            if lrc_path.exists():
+                lrc_path.unlink()
+            track_path.unlink()
+            deleted += 1
+
+            parent = track_path.parent
+            if parent != MUSIC_DIR and parent.exists() and not any(parent.iterdir()):
+                parent.rmdir()
+        except Exception as e:
+            logger.error(f"Failed to delete track {track_path}: {e}")
+
+    logger.info(f"Deleted {deleted} tracks from library")
+    return await get_library(request, q=q)
 
 
 @app.post("/api/tracks/art")
