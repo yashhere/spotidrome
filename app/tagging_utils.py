@@ -1,8 +1,9 @@
-"""Helpers for artist metadata formatting."""
+"""Helpers for metadata formatting."""
 
 from __future__ import annotations
 
 import re
+import unicodedata
 
 SPLIT_PATTERN = re.compile(r" / | feat\. | feat | ft\. | ft |; |, ")
 
@@ -46,3 +47,16 @@ def _dedupe_preserve_order(values: list[str]) -> list[str]:
         seen.add(item)
         result.append(item)
     return result
+
+
+def sanitize_filename(name: str | None) -> str:
+    """Create safe filename (ASCII with underscores)."""
+    if not name:
+        return "Unknown"
+
+    name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
+    name = re.sub(r"[<>:\"/\\|?*\[\]\']", "", name)
+    name = re.sub(r"\s+", "_", name)
+    name = re.sub(r"_+", "_", name)
+    name = name.strip("_")
+    return name[:180]

@@ -3,8 +3,6 @@ Core download logic - downloads tracks using yt-dlp and applies metadata.
 """
 
 import logging
-import re
-import unicodedata
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable
@@ -20,7 +18,7 @@ from .providers.youtube import (
     is_cookie_error,
 )
 from .providers.ytmusic import YTMusicProvider
-from .tagging_utils import format_display_artist, normalize_artists
+from .tagging_utils import format_display_artist, normalize_artists, sanitize_filename
 
 logger = logging.getLogger(__name__)
 
@@ -66,27 +64,6 @@ class TrackDownloader:
         self.cookies = cookies
         self.lyrics_provider = LyricsProvider()
         self._current_track_info: dict[str, str] = {}  # For progress hook context
-
-    def _sanitize_filename(self, name: str | None) -> str:
-        """Create safe filename (ASCII with underscores)."""
-        if not name:
-            return "Unknown"
-
-        # Normalize unicode and convert to ASCII
-        name = (
-            unicodedata.normalize("NFKD", name)
-            .encode("ascii", "ignore")
-            .decode("ascii")
-        )
-        # Remove invalid filesystem characters
-        name = re.sub(r'[<>:"/\\|?*\[\]\']', "", name)
-        # Replace spaces with underscores
-        name = re.sub(r"\s+", "_", name)
-        # Remove multiple underscores
-        name = re.sub(r"_+", "_", name)
-        # Trim underscores from ends
-        name = name.strip("_")
-        return name[:180]  # Limit length
 
     def _report_progress(self, status: str, current: int = 0, total: int = 0) -> None:
         """Report progress via callback if set."""
@@ -401,8 +378,8 @@ class TrackDownloader:
 
         artist = track["artists"][0] if track.get("artists") else "Unknown"
 
-        safe_artist = self._sanitize_filename(artist)
-        safe_title = self._sanitize_filename(track_name)
+        safe_artist = sanitize_filename(artist)
+        safe_title = sanitize_filename(track_name)
 
         # Store current track info for progress hooks
         self._current_track_info = {"artist": artist, "title": track_name}
