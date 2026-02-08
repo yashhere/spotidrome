@@ -399,7 +399,10 @@ def update_metadata_in_file(file_path, metadata: dict) -> bool:
         if "artist" in metadata and metadata["artist"]:
             # Handle multiple artists separated by ;
             artists = [a.strip() for a in metadata["artist"].split(";") if a.strip()]
-            audio["artist"] = artists
+            if len(artists) > 1:
+                audio["artist"] = "; ".join(artists)
+            else:
+                audio["artist"] = artists[0] if artists else ""
 
         if "album" in metadata and metadata["album"]:
             audio["album"] = metadata["album"]

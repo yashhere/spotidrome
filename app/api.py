@@ -433,9 +433,11 @@ async def update_track(
 
     # Get current metadata to check for changes
     old_artist = None
+    old_title = None
     try:
         audio = EasyID3(track_path)
         old_artist = audio.get("artist", [""])[0]
+        old_title = audio.get("title", [""])[0]
     except Exception:
         pass
 
@@ -452,21 +454,34 @@ async def update_track(
         },
     )
 
-    # Reorganize file if artist changed
+    # Reorganize file if artist or title changed
     new_path = track_path
-    if artist and old_artist and artist != old_artist:
-        # Sanitize artist name for directory
-        safe_artist = "".join(
-            c for c in artist if c.isalnum() or c in (" ", "_", "-")
-        ).strip()
-        safe_artist = safe_artist.replace(" ", "_")
+    artist_changed = artist and old_artist and artist != old_artist
+    title_changed = title and old_title and title != old_title
 
-        # New directory
-        new_dir = MUSIC_DIR / safe_artist
+    if artist_changed or title_changed:
+        # Determine new directory (use new artist if changed, otherwise keep current)
+        if artist_changed:
+            safe_artist = "".join(
+                c for c in artist if c.isalnum() or c in (" ", "_", "-")
+            ).strip()
+            safe_artist = safe_artist.replace(" ", "_")
+            new_dir = MUSIC_DIR / safe_artist
+        else:
+            new_dir = track_path.parent
+
         new_dir.mkdir(parents=True, exist_ok=True)
 
-        # New file path
-        new_filename = track_path.name
+        # Determine new filename (use new title if changed, otherwise keep current)
+        if title_changed:
+            safe_title = "".join(
+                c for c in title if c.isalnum() or c in (" ", "_", "-")
+            ).strip()
+            safe_title = safe_title.replace(" ", "_")
+            new_filename = f"{safe_title}.mp3"
+        else:
+            new_filename = track_path.name
+
         new_path = new_dir / new_filename
 
         # Move file if destination doesn't exist (to avoid overwriting)
